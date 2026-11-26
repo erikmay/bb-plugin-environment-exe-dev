@@ -1,0 +1,61 @@
+{
+  "name": "bb-plugin-environment-exe-dev",
+  "version": "0.1.0",
+  "description": "bb plugin: run every bb thread in its own exe.dev VM",
+  "license": "MIT",
+  "author": "Erik May (https://github.com/erikmay)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/erikmay/bb-plugin-environment-exe-dev.git"
+  },
+  "homepage": "https://github.com/erikmay/bb-plugin-environment-exe-dev#readme",
+  "bugs": {
+    "url": "https://github.com/erikmay/bb-plugin-environment-exe-dev/issues"
+  },
+  "keywords": [
+    "bb-plugin",
+    "bb",
+    "exe.dev",
+    "sandbox",
+    "coding-agents",
+    "machine-provider"
+  ],
+  "type": "module",
+  "engines": {
+    "bb": ">=0.50",
+    "bbPluginSdk": ">=0.6.157"
+  },
+  "bb": {
+    "name": "exe.dev VMs [Experimental]",
+    "description": "Run every bb thread in its own exe.dev VM",
+    "branding": {
+      "icon": "./assets/exe-dev.svg"
+    },
+    "server": "./server.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "build": "bb plugin build",
+    "upstream:check": "node scripts/check-upstream.mjs main"
+  },
+  "dependencies": {
+    "@exedev/sdk": "^0.7.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.157",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "better-sqlite3": "^12.11.1",
+    "cron-parser": "^5.10.7",
+    "hono": "^4.13.22",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.12"
+  }
+}

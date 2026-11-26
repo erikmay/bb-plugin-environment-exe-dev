@@ -1,0 +1,65 @@
+{
+  "repository": "https://github.com/get-bb/bb",
+  "syncedCommit": "fb045a046653cc127656ca3c7243d44ae4c94f3f",
+  "syncedAt": "2026-11-26",
+  "testedBbVersion": "0.50.1",
+  "testedPluginSdk": "0.6.157",
+  "tracked": [
+    {
+      "upstream": "plugins/environment-modal-sandbox/providers/sandbox-backend.ts",
+      "local": "providers/sandbox-backend.ts",
+      "relation": "port; machine inputs and validate() removed, close() removed"
+    },
+    {
+      "upstream": "plugins/environment-modal-sandbox/providers/register.ts",
+      "local": "providers/register.ts",
+      "relation": "port; no inputs/validate"
+    },
+    {
+      "upstream": "plugins/environment-modal-sandbox/server.ts",
+      "local": "server.ts",
+      "relation": "idle-activity tracking and pause-idle-machines schedule are ported verbatim in spirit; Modal allocation sweep is not"
+    },
+    {
+      "upstream": "plugins/environment-modal-sandbox/configuration.ts",
+      "local": "configuration.ts",
+      "relation": "idleMinutes semantics only"
+    },
+    {
+      "upstream": "plugins/environment-modal-sandbox/providers/README.md",
+      "local": null,
+      "relation": "backend lifecycle invariants this plugin must keep"
+    },
+    {
+      "upstream": "packages/plugin-sdk/src/machine-provider.ts",
+      "local": null,
+      "relation": "machine provider contract"
+    },
+    {
+      "upstream": "packages/plugin-sdk/src/machine-bootstrap.ts",
+      "local": null,
+      "relation": "MachineExecutor contract used by providers/exe-dev/client.ts"
+    },
+    {
+      "upstream": "apps/server/src/services/machines/bootstrap.ts",
+      "local": null,
+      "relation": "commands bb runs through the executor (needs sh, curl, node, stdin)"
+    },
+    {
+      "upstream": "apps/server/src/assets/install-machine.sh",
+      "local": null,
+      "relation": "Node.js floor and systemd user service behaviour the prerequisites script satisfies"
+    },
+    {
+      "upstream": "docs/environment-provisioning.md",
+      "local": null,
+      "relation": "environment/machine lifecycle semantics"
+    }
+  ],
+  "watchForPublicApis": [
+    "SandboxBackend",
+    "registerSandboxBackend",
+    "experimental_machines",
+    "experimental_environments"
+  ]
+}
