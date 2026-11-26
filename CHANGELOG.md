@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.2 — 2026-11-26
+
+- Fix: idle pause no longer interrupts a working agent. A turn that waited on
+  one slow tool call (for example a hanging web fetch) emitted no events for
+  longer than `idleMinutes`, so the VM was paused mid-turn and bb stopped the
+  turn with "Machine preservation is interrupting this turn". Machines with a
+  running turn are now never paused, and their idle clock restarts.
+- Fix: no idle pause right after the bb server was frozen (for example the
+  laptop running bb slept). VMs keep working while bb sleeps but cannot report;
+  after more than three minutes without a sweep every idle clock restarts so
+  the VMs can reconnect and deliver their events first.
+
 ## 0.2.1 — 2026-11-26
 
 - Pin Node.js to 24.22.3 with built-in SHA-256 checksums instead of

@@ -9,6 +9,7 @@ A [bb](https://github.com/get-bb/bb) plugin that runs every thread in its own
 - **With or without a project.** In a project the VM gets a project checkout;
   with "Don't work in a project" it gets a personal workspace directory.
 - **Pause when idle.** After 15 idle minutes (configurable) the VM is paused.
+  A VM whose agent is still working is never paused.
   exe.dev keeps its memory and disk; the next message resumes it.
 - **Cleaned up with the thread.** Archiving the last thread on a VM deletes it.
 - **No session cap.** Unlike Modal (24 h) or Vercel Sandbox, exe.dev VMs are

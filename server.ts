@@ -1,18 +1,9 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { resolveSettings, SETTING_DESCRIPTORS } from "./configuration.js";
-import { errorMessage } from "./error-message.js";
+import { sweepIdleMachines } from "./idle-sweep.js";
 import { createExeDevBackend } from "./providers/exe-dev/backend.js";
 import { registerSandboxBackend } from "./providers/register.js";
-
-function hasErrorCode(error: unknown, code: string): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    typeof error.code === "string" &&
-    error.code === code
-  );
-}
 
 export default async function plugin(bb: BbPluginApi): Promise<void> {
   const now = () => Date.now();
@@ -59,30 +50,31 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     await bumpOwnedMachine(terminal.hostId);
   });
 
+  let previousSweepAt: number | null = null;
   bb.background.schedule("pause-idle-machines", "* * * * *", async () => {
+    const sweepAt = now();
+    const lastSweepAt = previousSweepAt;
+    previousSweepAt = sweepAt;
     const resolved = await currentSettings();
     if (!resolved.ok || resolved.settings.idleMs === null) return;
-    const idleMs = resolved.settings.idleMs;
-    for (const host of await bb.sdk.hosts.list()) {
-      if (host.machineProviderId !== providerId || host.lifecycle.phase !== "active") continue;
-      try {
-        const stored = await bb.storage.kv.get<unknown>(idleKey(host.id));
-        const lastActivity = stored === undefined ? null : z.number().finite().parse(stored);
-        if (lastActivity === null) {
-          await bumpIdle(host.id);
-          continue;
-        }
-        if (now() < lastActivity + idleMs) continue;
-        await bb.sdk.hosts.experimental_suspend({ hostId: host.id });
-        bb.log.info(`Paused idle exe.dev machine ${host.id}`);
-      } catch (error) {
-        if (hasErrorCode(error, "machine_busy")) continue;
-        const current = await bb.sdk.hosts.get({ hostId: host.id }).catch(() => null);
-        const phase = current?.lifecycle.phase;
-        if (phase === "suspending" || phase === "suspended" || phase === "resuming") continue;
-        bb.log.warn(`Idle pause failed for ${host.id}: ${errorMessage(error)}`);
-      }
-    }
+    await sweepIdleMachines({
+      previousSweepAt: lastSweepAt,
+      providerId,
+      idleMs: resolved.settings.idleMs,
+      now,
+      listHosts: () => bb.sdk.hosts.list(),
+      listRunningThreads: () => bb.sdk.threads.listRunning(),
+      getLastActivity: async (hostId) => {
+        const stored = await bb.storage.kv.get<unknown>(idleKey(hostId));
+        return stored === undefined ? null : z.number().finite().parse(stored);
+      },
+      bump: bumpIdle,
+      suspend: async (hostId) => {
+        await bb.sdk.hosts.experimental_suspend({ hostId });
+      },
+      getPhase: async (hostId) => (await bb.sdk.hosts.get({ hostId })).lifecycle.phase,
+      log: bb.log,
+    });
   });
 
   registerSandboxBackend(bb, backend, { now, onConnected: bumpIdle });

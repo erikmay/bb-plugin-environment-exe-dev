@@ -18,6 +18,7 @@
     "server.ts",
     "configuration.ts",
     "error-message.ts",
+    "idle-sweep.ts",
     "providers",
     "test",
     "vitest.config.ts",

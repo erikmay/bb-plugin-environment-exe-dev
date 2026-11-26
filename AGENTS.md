@@ -15,6 +15,7 @@ upstream changes over inventing new structure.
 | Path | Role | Upstream counterpart |
 |---|---|---|
 | `server.ts` | Plugin entry: settings, idle tracking, pause-idle schedule, registration | `plugins/environment-modal-sandbox/server.ts` |
+| `idle-sweep.ts` | Decides which machines the pause-idle schedule pauses; unit tested | the schedule in `plugins/environment-modal-sandbox/server.ts` |
 | `configuration.ts` | Settings descriptors and validation | `plugins/environment-modal-sandbox/configuration.ts` |
 | `providers/sandbox-backend.ts` | Vendor-neutral backend interface | `plugins/environment-modal-sandbox/providers/sandbox-backend.ts` |
 | `providers/register.ts` | Maps a backend onto `bb.experimental_machines` / `bb.experimental_environments`; registers a project environment (`project-checkout`) and a projectless one (`personal-workspace`, id `<provider>-workspace`) | `plugins/environment-modal-sandbox/providers/register.ts`, `plugins/environment-personal-workspace/server.ts` |
@@ -46,6 +47,11 @@ These come from `plugins/environment-modal-sandbox/providers/README.md` upstream
   temp file that the command deletes; it must never appear in the command
   line, logs, or the persisted resource.
 - Never store secrets in the machine resource; it is readable by every plugin.
+- Never idle-pause a machine with a running turn (`bb.sdk.threads.listRunning`).
+  bb's suspend interrupts running turns, and a long silent tool call emits no
+  thread events, so event timestamps alone are not proof of idleness. Upstream
+  Modal plugin has the same gap. Likewise, after the bb server was frozen
+  (sweep gap > 3 min, laptop asleep) restart all idle clocks instead of pausing.
 
 ## Commands
 
@@ -164,7 +170,8 @@ configured `apiToken`, and bb connect ready:
 - [ ] Same with "Don't work in a project": the environment picker offers
       "exe.dev VM" and the agent's working directory is a personal workspace.
 - [ ] Idle pause: set `idleMinutes` to 1, wait about 2 minutes, the machine is
-      `suspended`. Restore the value.
+      `suspended`. A thread running `sleep 180` is not paused while it
+      runs. Restore the value.
 - [ ] Archive the thread → the VM disappears from `ssh exe.dev ls` within
       seconds; `bb machine remove <id> --yes` for standalone machines.
 
