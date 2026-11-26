@@ -88,7 +88,10 @@ npm test
 bb plugin install .        # from this checkout
 ```
 
-`AGENTS.md` describes the architecture, invariants, the end-to-end checklist,
+`npm run doctor` checks a local install end to end (bb plugin, providers,
+machines, logs, and with `EXE_TOKEN`/`EXE_TOKEN_FILE` the matching exe.dev VMs).
+[docs/VALIDATION.md](docs/VALIDATION.md) covers CLI and UI validation against
+http://127.0.0.1:38886/. `AGENTS.md` describes the architecture, invariants,
 and how to upgrade the plugin when bb changes (`npm run upstream:check`).
 
 ## License

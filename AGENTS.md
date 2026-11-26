@@ -23,6 +23,8 @@ upstream changes over inventing new structure.
 | `providers/exe-dev/resource.ts` | Persisted machine resource and VM naming | `providers/modal/resource.ts` |
 | `upstream.json` | Upstream commit this port is synced to, and the files it tracks | — |
 | `scripts/check-upstream.mjs` | Diffs tracked upstream files since the synced commit | — |
+| `scripts/doctor.mjs` | Local health check: bb plugin/providers/machines, plugin log, exe.dev VMs, orphan detection, VM internals | — |
+| `docs/VALIDATION.md` | How to validate and debug against a local bb | — |
 | `skills/exe-dev-vms/SKILL.md` | Skill bb exposes to agents running inside bb | `skills/modal-sandboxes/SKILL.md` |
 
 ## Invariants (do not break)
@@ -53,6 +55,8 @@ npm run typecheck
 npm test
 npm run build                 # bb plugin build (needs the bb CLI)
 npm run upstream:check        # diff tracked upstream files against bb main
+npm run doctor                # health check against the local bb and exe.dev (see docs/VALIDATION.md)
+npm run doctor -- --vm <name> # plus node/linger/daemon/stdin checks on one running VM
 node scripts/check-upstream.mjs <ref>   # against a tag or commit, e.g. v0.51.0
 ```
 
@@ -84,6 +88,14 @@ when a user reports breakage after a bb update.
    `testedBbVersion`, `testedPluginSdk`), add a `CHANGELOG.md` entry, bump the
    version, commit, and tag `vX.Y.Z`. Never move an existing tag: bb refuses a
    plugin whose tag changed commit.
+
+## Validating and getting insights
+
+`docs/VALIDATION.md` is the full procedure: `npm run doctor`, the CLI
+lifecycle walk, the UI end-to-end run against http://127.0.0.1:38886/ with a
+browser automation tool, and how to look inside a VM. Use it to verify any
+change yourself before reporting it done, and to diagnose user reports (start
+with `npm run doctor` and `bb plugin logs environment-exe-dev`).
 
 ## Manual end-to-end checklist
 

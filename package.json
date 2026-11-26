@@ -40,7 +40,8 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "build": "bb plugin build",
-    "upstream:check": "node scripts/check-upstream.mjs main"
+    "upstream:check": "node scripts/check-upstream.mjs main",
+    "doctor": "node scripts/doctor.mjs"
   },
   "dependencies": {
     "@exedev/sdk": "^0.7.0",
