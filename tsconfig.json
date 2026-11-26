@@ -19,6 +19,8 @@
     "configuration.ts",
     "error-message.ts",
     "providers",
-    "test"
+    "test",
+    "vitest.config.ts",
+    "vitest.live.config.ts"
   ]
 }

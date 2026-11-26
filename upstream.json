@@ -67,9 +67,25 @@
     }
   ],
   "watchForPublicApis": [
-    "SandboxBackend",
-    "registerSandboxBackend",
-    "experimental_machines",
-    "experimental_environments"
+    {
+      "symbol": "SandboxBackend",
+      "alert": "appears",
+      "meaning": "bb made the sandbox backend abstraction public; replace providers/sandbox-backend.ts and providers/register.ts with it"
+    },
+    {
+      "symbol": "registerSandboxBackend",
+      "alert": "appears",
+      "meaning": "bb exposes backend registration; delete the local copy and call the SDK"
+    },
+    {
+      "symbol": "experimental_machines",
+      "alert": "disappears",
+      "meaning": "the machine provider API was renamed or stabilised; rename bb.experimental_machines calls"
+    },
+    {
+      "symbol": "experimental_environments",
+      "alert": "disappears",
+      "meaning": "the environment API was renamed or stabilised; rename bb.experimental_environments calls"
+    }
   ]
 }

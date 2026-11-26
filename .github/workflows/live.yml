@@ -1,0 +1,41 @@
+name: Live exe.dev test
+
+on:
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "providers/**"
+      - "configuration.ts"
+      - "package-lock.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-exe-dev
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXE_TOKEN: ${{ secrets.EXE_TOKEN }}
+    steps:
+      - name: Skip without EXE_TOKEN
+        if: env.EXE_TOKEN == ''
+        run: echo "::notice::EXE_TOKEN secret not set; live test skipped."
+      - uses: actions/checkout@v5
+        if: env.EXE_TOKEN != ''
+      - uses: actions/setup-node@v5
+        if: env.EXE_TOKEN != ''
+        with:
+          node-version: 22
+          cache: npm
+      - if: env.EXE_TOKEN != ''
+        run: npm ci --ignore-scripts
+      - if: env.EXE_TOKEN != ''
+        run: npm run test:live

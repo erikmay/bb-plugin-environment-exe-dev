@@ -45,6 +45,9 @@ bb plugin config environment-exe-dev      # settings (secrets show as [set])
 ```
 
 `npm run typecheck && npm test` must pass before any manual check.
+`EXE_TOKEN_FILE=… npm run test:live` exercises the exe.dev side (create,
+stdin, exit codes, Node.js, retry, pause/resume, delete) against the real API
+in about 25 seconds without needing bb.
 
 ## 3. Lifecycle through the CLI
 

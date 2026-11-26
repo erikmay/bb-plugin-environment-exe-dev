@@ -7,50 +7,142 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const upstream = JSON.parse(readFileSync(join(root, "upstream.json"), "utf8"));
-const target = process.argv[2] ?? "main";
-const keep = process.argv.includes("--keep");
+const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+const args = process.argv.slice(2);
+const option = (name) => {
+  const index = args.indexOf(name);
+  return index === -1 ? undefined : args[index + 1];
+};
+const target = args.find((arg) => !arg.startsWith("--") && arg !== option("--markdown")) ?? "main";
+const keep = args.includes("--keep");
+const asJson = args.includes("--json");
+const markdownFile = option("--markdown");
 const checkout = mkdtempSync(join(tmpdir(), "bb-upstream-"));
 
-const git = (...args) =>
-  execFileSync("git", ["-C", checkout, ...args], { encoding: "utf8", maxBuffer: 64 << 20 });
+const git = (...gitArgs) =>
+  execFileSync("git", ["-C", checkout, ...gitArgs], { encoding: "utf8", maxBuffer: 64 << 20 });
 
+function npmVersion(name) {
+  try {
+    return execFileSync("npm", ["view", name, "version"], { encoding: "utf8" }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function newer(candidate, current) {
+  if (candidate === null || current === null) return false;
+  const parse = (version) => version.replace(/^[^\d]*/u, "").split(/[.-]/u).slice(0, 3).map(Number);
+  const [a, b] = [parse(candidate), parse(current)];
+  for (let i = 0; i < 3; i += 1) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  }
+  return false;
+}
+
+let report;
 try {
   execFileSync("git", ["clone", "--quiet", "--filter=blob:none", "--no-checkout", upstream.repository, checkout], {
-    stdio: "inherit",
+    stdio: ["ignore", "ignore", "inherit"],
   });
   git("fetch", "--quiet", "origin", target);
   const targetCommit = git("rev-parse", "FETCH_HEAD").trim();
   const paths = upstream.tracked.map((entry) => entry.upstream);
 
-  console.log(`Synced: ${upstream.syncedCommit.slice(0, 12)} (${upstream.syncedAt})`);
-  console.log(`Target: ${targetCommit.slice(0, 12)} (${target})\n`);
-
-  const stat = git("diff", "--stat", upstream.syncedCommit, targetCommit, "--", ...paths);
-  console.log(stat.trim().length === 0 ? "Tracked upstream files are unchanged." : stat);
+  const changedFiles = git("diff", "--numstat", upstream.syncedCommit, targetCommit, "--", ...paths)
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [added, removed, file] = line.split("\t");
+      const tracked = upstream.tracked.find((entry) => entry.upstream === file);
+      return { file, added: Number(added), removed: Number(removed), local: tracked?.local ?? null, relation: tracked?.relation ?? "" };
+    });
+  const movedOrDeleted = git("diff", "--name-status", "--diff-filter=DR", upstream.syncedCommit, targetCommit, "--", ...paths)
+    .trim()
+    .split("\n")
+    .filter(Boolean);
 
   const patch = git("diff", upstream.syncedCommit, targetCommit, "--", ...paths);
-  const patchFile = join(root, "upstream-diff.patch");
-  writeFileSync(patchFile, patch);
-  if (patch.length > 0) console.log(`Full diff written to upstream-diff.patch`);
+  writeFileSync(join(root, "upstream-diff.patch"), patch);
 
-  const sdkPackage = JSON.parse(git("show", `${targetCommit}:packages/plugin-sdk/package.json`));
-  console.log(`\nUpstream @get-bb/plugin-sdk: ${sdkPackage.version} (synced against ${upstream.testedPluginSdk})`);
-
-  const sdkHits = [];
-  for (const symbol of upstream.watchForPublicApis) {
-    let out = "";
+  const apiSignals = [];
+  for (const watch of upstream.watchForPublicApis) {
+    let hits = "";
     try {
-      out = git("grep", "-l", symbol, targetCommit, "--", "packages/plugin-sdk/src");
+      hits = git("grep", "-l", watch.symbol, targetCommit, "--", "packages/plugin-sdk/src");
     } catch (error) {
       if (error.status !== 1) throw error;
     }
-    if (out.trim().length > 0) sdkHits.push(`${symbol}: ${out.trim().split("\n").length} file(s)`);
+    const present = hits.trim().length > 0;
+    if ((watch.alert === "appears" && present) || (watch.alert === "disappears" && !present)) {
+      apiSignals.push({ symbol: watch.symbol, alert: watch.alert, meaning: watch.meaning });
+    }
   }
-  console.log(sdkHits.length === 0 ? "No watched symbols in the public SDK." : `Watched symbols in the public SDK:\n  ${sdkHits.join("\n  ")}`);
 
-  const renamed = git("diff", "--name-status", "--diff-filter=DR", upstream.syncedCommit, targetCommit, "--", ...paths).trim();
-  if (renamed.length > 0) console.log(`\nMoved or deleted upstream files (update upstream.json):\n${renamed}`);
+  const upstreamSdk = JSON.parse(git("show", `${targetCommit}:packages/plugin-sdk/package.json`)).version;
+  const exeSdkRange = pkg.dependencies["@exedev/sdk"];
+  const versions = {
+    bbApp: { latest: npmVersion("bb-app"), tested: upstream.testedBbVersion },
+    pluginSdk: { latest: npmVersion("@get-bb/plugin-sdk"), upstreamMain: upstreamSdk, tested: upstream.testedPluginSdk },
+    exedevSdk: { latest: npmVersion("@exedev/sdk"), declared: exeSdkRange },
+  };
+  const newReleases = [];
+  if (newer(versions.bbApp.latest, versions.bbApp.tested)) newReleases.push(`bb-app ${versions.bbApp.latest} (tested ${versions.bbApp.tested})`);
+  if (newer(versions.pluginSdk.latest, versions.pluginSdk.tested)) newReleases.push(`@get-bb/plugin-sdk ${versions.pluginSdk.latest} (tested ${versions.pluginSdk.tested})`);
+  if (newer(versions.exedevSdk.latest, exeSdkRange)) newReleases.push(`@exedev/sdk ${versions.exedevSdk.latest} (declared ${exeSdkRange})`);
+
+  report = {
+    syncedCommit: upstream.syncedCommit,
+    targetRef: target,
+    targetCommit,
+    changedFiles,
+    movedOrDeleted,
+    apiSignals,
+    versions,
+    newReleases,
+    drift: changedFiles.length > 0 || movedOrDeleted.length > 0 || apiSignals.length > 0,
+  };
 } finally {
-  if (keep) console.log(`\nUpstream checkout kept at ${checkout}`);
+  if (keep) console.error(`Upstream checkout kept at ${checkout}`);
   else rmSync(checkout, { recursive: true, force: true });
+}
+
+function markdown(r) {
+  const lines = [
+    `Upstream check against [get-bb/bb@${r.targetCommit.slice(0, 12)}](https://github.com/get-bb/bb/commit/${r.targetCommit}) (synced: \`${r.syncedCommit.slice(0, 12)}\`).`,
+    "",
+  ];
+  if (r.changedFiles.length > 0) {
+    lines.push("### Changed tracked files", "", "| Upstream file | +/- | Local counterpart | Why it is tracked |", "|---|---|---|---|");
+    for (const f of r.changedFiles) lines.push(`| \`${f.file}\` | +${f.added}/-${f.removed} | ${f.local ? `\`${f.local}\`` : "contract"} | ${f.relation} |`);
+    lines.push("", `Compare: https://github.com/get-bb/bb/compare/${r.syncedCommit.slice(0, 12)}...${r.targetCommit.slice(0, 12)}`, "");
+  }
+  if (r.movedOrDeleted.length > 0) lines.push("### Moved or deleted", "", "```", ...r.movedOrDeleted, "```", "");
+  if (r.apiSignals.length > 0) {
+    lines.push("### Plugin SDK API signals", "");
+    for (const s of r.apiSignals) lines.push(`- \`${s.symbol}\` ${s.alert}: ${s.meaning}`);
+    lines.push("");
+  }
+  if (r.newReleases.length > 0) {
+    lines.push("### New releases", "");
+    for (const release of r.newReleases) lines.push(`- ${release}`);
+    lines.push("");
+  }
+  if (!r.drift && r.newReleases.length === 0) lines.push("No drift.");
+  lines.push("", "Follow **Upgrading to a newer bb** in `AGENTS.md`, then update `upstream.json`.");
+  return lines.join("\n");
+}
+
+if (markdownFile !== undefined) writeFileSync(markdownFile, markdown(report));
+if (asJson) {
+  console.log(JSON.stringify(report, null, 2));
+} else {
+  console.log(`Synced: ${report.syncedCommit.slice(0, 12)}  Target: ${report.targetCommit.slice(0, 12)} (${report.targetRef})`);
+  console.log(report.changedFiles.length === 0 ? "Tracked upstream files are unchanged." : "Changed tracked files:");
+  for (const f of report.changedFiles) console.log(`  ${f.file} (+${f.added}/-${f.removed}) -> ${f.local ?? "contract"}`);
+  for (const m of report.movedOrDeleted) console.log(`  moved/deleted: ${m}`);
+  for (const s of report.apiSignals) console.log(`API signal: ${s.symbol} ${s.alert} — ${s.meaning}`);
+  for (const r of report.newReleases) console.log(`New release: ${r}`);
+  if (report.changedFiles.length > 0) console.log("Full diff written to upstream-diff.patch");
 }

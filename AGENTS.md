@@ -52,13 +52,64 @@ These come from `plugins/environment-modal-sandbox/providers/README.md` upstream
 ```sh
 npm install
 npm run typecheck
-npm test
+npm test                      # unit tests, fake exe.dev client, no secrets
+npm run test:live             # real exe.dev API; needs EXE_TOKEN or EXE_TOKEN_FILE; creates and deletes one VM
 npm run build                 # bb plugin build (needs the bb CLI)
 npm run upstream:check        # diff tracked upstream files against bb main
 npm run doctor                # health check against the local bb and exe.dev (see docs/VALIDATION.md)
 npm run doctor -- --vm <name> # plus node/linger/daemon/stdin checks on one running VM
-node scripts/check-upstream.mjs <ref>   # against a tag or commit, e.g. v0.51.0
+node scripts/check-upstream.mjs <ref> [--json] [--markdown out.md]   # against a tag or commit
 ```
+
+## Definition of done
+
+A change is done when all of these hold, and the PR says how each was checked:
+
+1. `npm run typecheck` and `npm test` pass.
+2. Behaviour changes in `providers/` or `configuration.ts` have unit tests
+   against the fake client (`test/backend.test.ts`), and `npm run test:live`
+   passes when an exe.dev token is available.
+3. User-visible changes are reflected in `README.md`, `PLUGIN_OVERVIEW.md`,
+   `skills/exe-dev-vms/SKILL.md` and `docs/VALIDATION.md` where relevant.
+4. `CHANGELOG.md` has a `## X.Y.Z — YYYY-MM-DD` section and `package.json`
+   carries that version. Below 1.0: new features and anything that changes
+   settings or behaviour bump the minor version; fixes bump the patch.
+5. Merging to `main` releases automatically (see Automation); never tag by
+   hand.
+
+## Adding a feature
+
+1. Restate the goal and acceptance criteria from the issue. Ask on the issue
+   when a user decision is missing instead of guessing.
+2. Find where it belongs:
+   - a new setting: `configuration.ts` (descriptor, validation,
+     `ResolvedSettings`) plus `test/configuration.test.ts`;
+   - VM lifecycle or exe.dev calls: `providers/exe-dev/backend.ts` or
+     `client.ts`, keeping the invariants above;
+   - something every sandbox provider would want (not exe.dev specific):
+     `providers/register.ts` / `sandbox-backend.ts`, and check whether bb's
+     Modal plugin already does it upstream so the port stays close;
+   - bb-side behaviour (idle tracking, events, schedules): `server.ts`.
+3. Read the exact API before using it: `node_modules/@exedev/sdk/dist/*.d.ts`
+   and `node_modules/@get-bb/plugin-sdk/bundled-types/bb-plugin-sdk.d.ts`. Do
+   not guess signatures.
+4. Write the test first against the fake client, then the code.
+5. Meet the definition of done, open a PR.
+
+## Automation
+
+| Workflow | Trigger | What it does | Needs |
+|---|---|---|---|
+| `ci.yml` | push, PR, manual | typecheck + unit tests | — |
+| `live.yml` | weekly, manual, pushes touching `providers/` | `npm run test:live` against real exe.dev | secret `EXE_TOKEN` (token tagged e.g. `bb-ci`, cmds `whoami,ls,new,rm,pause,resume,ssh,stat`) |
+| `upstream-watch.yml` | weekly, manual | runs `check-upstream.mjs`, opens or updates one `upstream-drift` issue, starts the agent on real drift | — (agent part needs agent secret) |
+| `agent.yml` | label `agent`, `@claude` comment by the owner, dispatched by upstream-watch | Claude Code works the issue per this file and opens a PR on `agent/issue-N` | secret `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` |
+| `release.yml` | push to `main` changing `package.json` | tags `vX.Y.Z` and publishes a GitHub release from the CHANGELOG section, if the tag does not exist yet | — |
+| Dependabot | weekly | npm and Actions updates, except packages `bb plugin types` manages | — |
+
+Workflows without their secret skip with a notice instead of failing. Pull
+requests opened by the agent use the workflow token, so GitHub does not start
+CI for them automatically; the agent dispatches `ci.yml` on its branch.
 
 ## Upgrading to a newer bb
 
@@ -124,5 +175,5 @@ configured `apiToken`, and bb connect ready:
 - Keep the exe.dev token scope minimal: `whoami,ls,new,rm,pause,resume,ssh,stat`
   with `--tag=bb`. If the plugin needs another command, document it in the
   README and the setting description.
-- Tests use the fake client in `test/backend.test.ts`; never call the real
-  exe.dev API from tests.
+- Unit tests use the fake client in `test/backend.test.ts` and never call the
+  real exe.dev API. Only `test/live/` does, and it must delete what it creates.

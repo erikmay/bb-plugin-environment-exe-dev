@@ -84,9 +84,16 @@ bb plugin config environment-exe-dev set apiToken <token>
 ```sh
 npm install
 npm run typecheck
-npm test
+npm test                   # unit tests, no secrets
+npm run test:live          # against real exe.dev, needs EXE_TOKEN
 bb plugin install .        # from this checkout
 ```
+
+Maintenance is mostly automated: a weekly job compares the plugin against
+bb's upstream code and opens an issue on drift, an optional Claude Code
+workflow turns such issues (or any issue labelled `agent`) into pull
+requests, and merging a version bump publishes the release. See
+**Automation** in `AGENTS.md`.
 
 `npm run doctor` checks a local install end to end (bb plugin, providers,
 machines, logs, and with `EXE_TOKEN`/`EXE_TOKEN_FILE` the matching exe.dev VMs).
