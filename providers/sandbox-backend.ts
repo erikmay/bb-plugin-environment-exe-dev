@@ -42,6 +42,7 @@ export interface SandboxBackendDefinition {
   displayName: string;
   description: string;
   environmentDescription: string;
+  projectlessEnvironmentDescription?: string;
   runtimeName: string;
   icon: string;
   ephemeral: boolean;

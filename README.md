@@ -6,6 +6,8 @@ A [bb](https://github.com/get-bb/bb) plugin that runs every thread in its own
 - **One VM per thread.** Pick **exe.dev VM** in the new-thread environment
   picker. bb creates a VM, installs its daemon, checks out the project, and
   shows the machine as "exe.dev VM xxxxxx" under the composer.
+- **With or without a project.** In a project the VM gets a project checkout;
+  with "Don't work in a project" it gets a personal workspace directory.
 - **Pause when idle.** After 15 idle minutes (configurable) the VM is paused.
   exe.dev keeps its memory and disk; the next message resumes it.
 - **Cleaned up with the thread.** Archiving the last thread on a VM deletes it.
@@ -30,7 +32,7 @@ A [bb](https://github.com/get-bb/bb) plugin that runs every thread in its own
 ## Install
 
 ```sh
-bb plugin install git:https://github.com/erikmay/bb-plugin-environment-exe-dev.git@^0.1.0
+bb plugin install git:https://github.com/erikmay/bb-plugin-environment-exe-dev.git@^0.2.0
 ```
 
 Create an API token that can only manage VMs tagged `bb`:

@@ -11,7 +11,9 @@ the environment "exe.dev VM".
 1. Check configuration with `bb plugin list` (the plugin must be `running`, not
    `needs-configuration`) and `bb machine providers` (lists `exe-dev`). Never
    print `apiToken`.
-2. A new thread on its own VM: choose the "exe.dev VM" environment. From the
+2. A new thread on its own VM: choose the "exe.dev VM" environment, in a
+   project (project checkout) or without one (personal workspace,
+   `bb thread spawn --environment-provider exe-dev-workspace`). From the
    CLI, a standalone machine: `bb machine create --provider exe-dev --json`
    (pass `--key <stable-key>` when retrying).
 3. Lifecycle: `bb machine suspend <id>`, `bb machine resume <id>`,

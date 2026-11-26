@@ -17,7 +17,7 @@ upstream changes over inventing new structure.
 | `server.ts` | Plugin entry: settings, idle tracking, pause-idle schedule, registration | `plugins/environment-modal-sandbox/server.ts` |
 | `configuration.ts` | Settings descriptors and validation | `plugins/environment-modal-sandbox/configuration.ts` |
 | `providers/sandbox-backend.ts` | Vendor-neutral backend interface | `plugins/environment-modal-sandbox/providers/sandbox-backend.ts` |
-| `providers/register.ts` | Maps a backend onto `bb.experimental_machines` / `bb.experimental_environments` | `plugins/environment-modal-sandbox/providers/register.ts` |
+| `providers/register.ts` | Maps a backend onto `bb.experimental_machines` / `bb.experimental_environments`; registers a project environment (`project-checkout`) and a projectless one (`personal-workspace`, id `<provider>-workspace`) | `plugins/environment-modal-sandbox/providers/register.ts`, `plugins/environment-personal-workspace/server.ts` |
 | `providers/exe-dev/backend.ts` | exe.dev lifecycle: create, suspend, resume, remove, reconcile | `providers/modal/backend.ts` |
 | `providers/exe-dev/client.ts` | Executor over `vm.ssh`, VM prerequisites script | `providers/modal/client.ts` |
 | `providers/exe-dev/resource.ts` | Persisted machine resource and VM naming | `providers/modal/resource.ts` |
@@ -98,6 +98,8 @@ configured `apiToken`, and bb connect ready:
       `bb machine resume <id>` → `connected` again.
 - [ ] New thread with environment "exe.dev VM": provisioning succeeds, the
       composer chip reads "exe.dev VM xxxxxx", the agent can run `hostname`.
+- [ ] Same with "Don't work in a project": the environment picker offers
+      "exe.dev VM" and the agent's working directory is a personal workspace.
 - [ ] Idle pause: set `idleMinutes` to 1, wait about 2 minutes, the machine is
       `suspended`. Restore the value.
 - [ ] Archive the thread → the VM disappears from `ssh exe.dev ls` within

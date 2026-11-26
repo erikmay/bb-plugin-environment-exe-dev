@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 — 2026-11-26
+
+- Projectless threads ("Don't work in a project") can now run in an exe.dev
+  VM: a second environment, `exe-dev-workspace`, pairs the exe.dev machine
+  provider with bb's built-in Personal workspace.
+
 ## 0.1.0 — 2026-11-26
 
 - First release: `exe-dev` machine provider and "exe.dev VM" environment.

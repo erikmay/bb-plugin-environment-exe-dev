@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/get-bb/bb",
-  "syncedCommit": "fb045a046653cc127656ca3c7243d44ae4c94f3f",
+  "syncedCommit": "b0ddaad731565d7e4de68d824120d802fc78f7d5",
   "syncedAt": "2026-11-26",
   "testedBbVersion": "0.50.1",
   "testedPluginSdk": "0.6.157",
@@ -14,6 +14,11 @@
       "upstream": "plugins/environment-modal-sandbox/providers/register.ts",
       "local": "providers/register.ts",
       "relation": "port; no inputs/validate"
+    },
+    {
+      "upstream": "plugins/environment-personal-workspace/server.ts",
+      "local": null,
+      "relation": "projectless environment provider the exe-dev-workspace composition builds on (id personal-workspace, requires.projectless)"
     },
     {
       "upstream": "plugins/environment-modal-sandbox/server.ts",
@@ -54,6 +59,11 @@
       "upstream": "docs/environment-provisioning.md",
       "local": null,
       "relation": "environment/machine lifecycle semantics"
+    },
+    {
+      "upstream": "apps/server/src/routes/system.ts",
+      "local": null,
+      "relation": "composition listing: projectless filter via environment provider requires"
     }
   ],
   "watchForPublicApis": [

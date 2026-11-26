@@ -114,6 +114,7 @@ export function createExeDevBackend(deps: {
       displayName: "exe.dev VM",
       description: "Create a VM in your exe.dev account.",
       environmentDescription: "Create a project checkout in a new exe.dev VM.",
+      projectlessEnvironmentDescription: "Create a personal workspace in a new exe.dev VM.",
       runtimeName: "exe.dev",
       icon: "./assets/exe-dev.svg",
       ephemeral: true,

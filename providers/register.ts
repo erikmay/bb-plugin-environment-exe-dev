@@ -31,6 +31,17 @@ export function registerSandboxBackend<Resource extends PluginMachineProviderRes
     environmentProviderId: "project-checkout",
   });
 
+  if (definition.projectlessEnvironmentDescription !== undefined) {
+    bb.experimental_environments.register({
+      id: `${definition.id}-workspace`,
+      displayName: definition.displayName,
+      description: definition.projectlessEnvironmentDescription,
+      icon: definition.icon,
+      machineProviderId: definition.id,
+      environmentProviderId: "personal-workspace",
+    });
+  }
+
   bb.experimental_machines.register({
     id: definition.id,
     displayName: definition.displayName,
