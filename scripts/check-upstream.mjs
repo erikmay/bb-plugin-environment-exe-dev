@@ -91,6 +91,16 @@ try {
   if (newer(versions.bbApp.latest, versions.bbApp.tested)) newReleases.push(`bb-app ${versions.bbApp.latest} (tested ${versions.bbApp.tested})`);
   if (newer(versions.pluginSdk.latest, versions.pluginSdk.tested)) newReleases.push(`@get-bb/plugin-sdk ${versions.pluginSdk.latest} (tested ${versions.pluginSdk.tested})`);
   if (newer(versions.exedevSdk.latest, exeSdkRange)) newReleases.push(`@exedev/sdk ${versions.exedevSdk.latest} (declared ${exeSdkRange})`);
+  const pinnedNode = readFileSync(join(root, "providers/exe-dev/client.ts"), "utf8").match(/NODE_VERSION = "([\d.]+)"/u)?.[1] ?? null;
+  try {
+    const index = await (await fetch("https://nodejs.org/dist/index.json")).json();
+    const major = pinnedNode?.split(".")[0];
+    const latestNode = index.find((release) => release.version.startsWith(`v${major}.`))?.version.slice(1) ?? null;
+    versions.node = { latest: latestNode, pinned: pinnedNode };
+    if (newer(latestNode, pinnedNode)) newReleases.push(`Node.js ${latestNode} (pinned ${pinnedNode}; update NODE_VERSION and NODE_SHA256 in providers/exe-dev/client.ts)`);
+  } catch {
+    versions.node = { latest: null, pinned: pinnedNode };
+  }
 
   report = {
     syncedCommit: upstream.syncedCommit,

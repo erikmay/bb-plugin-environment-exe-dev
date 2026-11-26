@@ -136,11 +136,9 @@ export function createExeDevBackend(deps: {
       const name = vmNameForKey(context.key);
       let vm = await findVm(client.vm(name), context.signal);
       if (vm === null) {
-        context.report.step("Creating the exe.dev VM…");
         vm = await newVm(client, name, context.key, settings, context.signal);
-        context.report.log(`Created exe.dev VM ${vm.name}\n`);
       } else {
-        context.report.log(`Reusing exe.dev VM ${vm.name}\n`);
+        context.report.step(`Reusing exe.dev VM ${vm.name}…`);
       }
       const resource: ExeDevMachineResource = {
         key: context.key,
@@ -150,7 +148,7 @@ export function createExeDevBackend(deps: {
       await context.checkpoint(resource);
       context.signal.throwIfAborted();
       if (isPaused(vm)) {
-        context.report.step("Resuming the exe.dev VM…");
+        context.report.step(`Resuming exe.dev VM ${vm.name}…`);
         await vm.resume({ signal: context.signal });
       }
       await ensurePrerequisites(vm, context.report, context.signal);
@@ -167,7 +165,7 @@ export function createExeDevBackend(deps: {
         throw new Error(`exe.dev VM ${context.resource.vmName} no longer exists.`);
       }
       if (!isPaused(vm)) {
-        context.report.step("Pausing the exe.dev VM…");
+        context.report.step(`Pausing exe.dev VM ${vm.name}…`);
         await vm.pause({ signal: context.signal });
       }
       return context.resource;
@@ -178,7 +176,7 @@ export function createExeDevBackend(deps: {
         throw new Error(`exe.dev VM ${context.resource.vmName} no longer exists.`);
       }
       if (isPaused(vm)) {
-        context.report.step("Resuming the exe.dev VM…");
+        context.report.step(`Resuming exe.dev VM ${vm.name}…`);
         const resumed = await vm.resume({ signal: context.signal });
         if (resumed.cold_booted === "true") {
           context.report.log("exe.dev cold-booted the VM; restarting the bb daemon\n");

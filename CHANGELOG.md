@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 — 2026-11-26
+
+- Pin Node.js to 24.22.3 with built-in SHA-256 checksums instead of
+  `latest-v24.x`, so every VM gets the same, reviewed build. The upstream
+  watch reports newer Node.js releases.
+- Fail clearly on unsupported CPU architectures instead of guessing x64.
+- Cleaner provisioning log: no duplicate "Creating" step, the VM name is part
+  of each step, npm's update and funding notices are silenced.
+
 ## 0.2.0 — 2026-11-26
 
 - Projectless threads ("Don't work in a project") can now run in an exe.dev

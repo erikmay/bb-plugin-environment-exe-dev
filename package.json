@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-environment-exe-dev",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "bb plugin: run every bb thread in its own exe.dev VM",
   "license": "MIT",
   "author": "Erik May (https://github.com/erikmay)",

@@ -4,6 +4,7 @@ import type { MachineExecutor } from "@get-bb/plugin-sdk";
 import type { SettingsResolution } from "../configuration.js";
 import { createExeDevBackend } from "../providers/exe-dev/backend.js";
 import { vmNameForKey, type ExeDevMachineResource } from "../providers/exe-dev/resource.js";
+import { NODE_SHA256, NODE_VERSION } from "../providers/exe-dev/client.js";
 
 const EMAIL = "owner@example.com";
 
@@ -168,5 +169,27 @@ describe("vmNameForKey", () => {
     expect(name).toBe(vmNameForKey("thr_ydedrkvk9f"));
     expect(name).toMatch(/^bb-[0-9a-f]{16}$/);
     expect(vmNameForKey("other")).not.toBe(name);
+  });
+});
+
+describe("VM preparation", () => {
+  it("installs a pinned, checksum-verified Node.js and keeps npm quiet", async () => {
+    const { backend, report, signal, vms } = setup();
+    await backend.create({ key: "thr_prep", attempt: 1, report, signal, checkpoint: async () => {} });
+    const vm = vms.get(vmNameForKey("thr_prep"))!;
+    const ssh = vi.spyOn(vm, "ssh");
+    await backend.resume({
+      hostId: "host_1",
+      resource: { key: "thr_prep", vmName: vm.name, accountEmail: EMAIL },
+      report,
+      signal,
+      checkpoint: async () => {},
+    });
+    const script = ssh.mock.calls[0]?.[0] ?? "";
+    expect(script).toContain(`https://nodejs.org/dist/v${NODE_VERSION}/`);
+    expect(script).toContain(NODE_SHA256.x64);
+    expect(script).not.toContain("latest-v");
+    expect(script).toContain("NPM_CONFIG_UPDATE_NOTIFIER=false");
+    expect(report.step).toHaveBeenCalledWith(`Preparing exe.dev VM ${vm.name}…`);
   });
 });

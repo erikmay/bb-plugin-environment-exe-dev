@@ -6,12 +6,19 @@ import type { PluginMachineProviderProgress } from "@get-bb/plugin-sdk/machine-p
 const STDIN_DIR = ".bb-exe-dev";
 const KILL_GRACE_SECONDS = 10;
 
+export const NODE_VERSION = "24.22.3";
+export const NODE_SHA256: Readonly<Record<"x64" | "arm64", string>> = {
+  x64: "4f2b175a6d53a5c617a80dba2676238a0688cef28c6da4eba35c7d844e66fcfb",
+  arm64: "6e51a2ada00f0011cc266f65d98922b403d7ad88f809ca2aa615a5fe1ce6e86c",
+};
+
 const SESSION_ENV = `uid=$(id -u)
 if [ -d "/run/user/$uid" ]; then
   export XDG_RUNTIME_DIR="/run/user/$uid"
   [ -S "$XDG_RUNTIME_DIR/bus" ] && export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 fi
-export PATH="/usr/local/bin:$PATH"`;
+export PATH="/usr/local/bin:$PATH"
+export NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false`;
 
 const PREREQUISITES_SCRIPT = `set -eu
 ${SESSION_ENV}
@@ -26,15 +33,17 @@ if command -v node >/dev/null 2>&1; then
   fi
 fi
 if [ "$need_node" = 1 ]; then
-  echo "Installing Node.js 24 for the bb daemon"
-  case "$(uname -m)" in aarch64|arm64) arch=arm64 ;; *) arch=x64 ;; esac
-  dist=https://nodejs.org/dist/latest-v24.x
+  case "$(uname -m)" in
+    x86_64|amd64) arch=x64; sha=${NODE_SHA256.x64} ;;
+    aarch64|arm64) arch=arm64; sha=${NODE_SHA256.arm64} ;;
+    *) echo "Unsupported CPU architecture $(uname -m) for the bb daemon" >&2; exit 1 ;;
+  esac
+  file="node-v${NODE_VERSION}-linux-$arch.tar.xz"
+  echo "Installing Node.js ${NODE_VERSION} for the bb daemon"
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
-  curl -fsSL --retry 3 "$dist/SHASUMS256.txt" -o "$tmp/SHASUMS256.txt"
-  file=$(awk -v f="linux-$arch.tar.xz" '$2 ~ f"$" { print $2 }' "$tmp/SHASUMS256.txt")
-  curl -fsSL --retry 3 "$dist/$file" -o "$tmp/$file"
-  (cd "$tmp" && grep " $file\\$" SHASUMS256.txt | sha256sum -c --quiet)
+  curl -fsSL --retry 3 "https://nodejs.org/dist/v${NODE_VERSION}/$file" -o "$tmp/$file"
+  echo "$sha  $tmp/$file" | sha256sum -c --quiet
   sudo tar -xJf "$tmp/$file" -C /usr/local --strip-components=1 --no-same-owner \\
     --exclude='*/CHANGELOG.md' --exclude='*/LICENSE' --exclude='*/README.md'
 fi
@@ -68,7 +77,7 @@ export async function ensurePrerequisites(
   report: PluginMachineProviderProgress,
   signal: AbortSignal,
 ): Promise<void> {
-  report.step("Preparing the exe.dev VM…");
+  report.step(`Preparing exe.dev VM ${vm.name}…`);
   const result = await vm.ssh(PREREQUISITES_SCRIPT, {
     signal,
     capture: false,
