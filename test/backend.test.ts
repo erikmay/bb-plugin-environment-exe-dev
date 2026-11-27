@@ -166,6 +166,7 @@ describe("exe.dev backend", () => {
       tags: ["tag:bb-sandbox"],
     });
     expect(keyRequest.expirySeconds).toBe(300);
+    expect(keyRequest.description).toMatch(/^[A-Za-z0-9 -]+$/);
     const vm = vms.get(vmNameForKey("thr_oauth"));
     expect(vm?.files.find((file) => file.path.includes("tailscale-"))?.data).toBe("tskey-auth-minted");
   });

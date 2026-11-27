@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 — 2026-11-27
+
+- Fix: minting Tailscale auth keys failed with HTTP 400, because the key
+  description contained a dot. Tailscale's own error message is now part of
+  the error.
+
 ## 0.4.0 — 2026-11-27
 
 Changes from an independent code review.

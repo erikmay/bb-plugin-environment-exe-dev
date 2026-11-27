@@ -22,10 +22,10 @@ describe("authKeyForJoin", () => {
     const fakeFetch = vi.fn(async (url: string) =>
       url.endsWith("/oauth/token")
         ? new Response(JSON.stringify({ access_token: "at" }), { status: 200 })
-        : new Response("forbidden", { status: 403 }),
+        : new Response(JSON.stringify({ message: "tag not permitted" }), { status: 403 }),
     );
     await expect(authKeyForJoin(oauth, { fetch: fakeFetch as unknown as typeof fetch })).rejects.toThrow(
-      /auth_keys scope and must own tag:bb-sandbox/,
+      /HTTP 403: tag not permitted\).*auth_keys scope and must own tag:bb-sandbox/,
     );
   });
 });

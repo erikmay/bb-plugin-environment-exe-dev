@@ -52,13 +52,15 @@ export async function authKeyForJoin(
         },
       },
       expirySeconds: KEY_EXPIRY_SECONDS,
-      description: "bb exe.dev VM",
+      // Tailscale allows only letters, digits, spaces and dashes here.
+      description: "bb exe-dev VM",
     }),
     signal,
   });
   if (!keyResponse.ok) {
+    const detail = await apiMessage(keyResponse);
     throw new Error(
-      `Tailscale did not create an auth key (HTTP ${keyResponse.status}). The OAuth client needs the auth_keys scope and must own ${tailnet.tags.join(", ")}.`,
+      `Tailscale did not create an auth key (HTTP ${keyResponse.status}${detail}). The OAuth client needs the auth_keys scope and must own ${tailnet.tags.join(", ")}.`,
     );
   }
   const { key } = (await keyResponse.json()) as { key?: unknown };
@@ -66,4 +68,14 @@ export async function authKeyForJoin(
     throw new Error("Tailscale returned no auth key.");
   }
   return key;
+}
+
+/** Tailscale's own error message, e.g. ": invalid description" (never secrets). */
+async function apiMessage(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: unknown };
+    return typeof body.message === "string" ? `: ${body.message.slice(0, 200)}` : "";
+  } catch {
+    return "";
+  }
 }
