@@ -13,7 +13,10 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     return resolveSettings(await settings.get());
   }
 
-  const backend = createExeDevBackend({ currentSettings });
+  const backend = createExeDevBackend({
+    currentSettings,
+    serverUrl: async () => (await bb.sdk.system.config()).generalSettings.machineServerUrl,
+  });
   const providerId = backend.definition.id;
 
   const idleKey = (hostId: string) => `idle/${hostId}`;
@@ -50,27 +53,35 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     await bumpOwnedMachine(terminal.hostId);
   });
 
-  let previousSweepAt: number | null = null;
+  const SWEEP_KEY = "sweep/last";
   bb.background.schedule("pause-idle-machines", "* * * * *", async () => {
-    const sweepAt = now();
-    const lastSweepAt = previousSweepAt;
-    previousSweepAt = sweepAt;
+    const stored = z.number().finite().safeParse(await bb.storage.kv.get<unknown>(SWEEP_KEY));
+    await bb.storage.kv.set(SWEEP_KEY, now());
     const resolved = await currentSettings();
-    if (!resolved.ok || resolved.settings.idleMs === null) return;
+    if (!resolved.ok) return;
     await sweepIdleMachines({
-      previousSweepAt: lastSweepAt,
+      previousSweepAt: stored.success ? stored.data : null,
       providerId,
-      idleMs: resolved.settings.idleMs,
+      idleMs: resolved.settings.idleMs ?? Number.POSITIVE_INFINITY,
       now,
       listHosts: () => bb.sdk.hosts.list(),
       listRunningThreads: () => bb.sdk.threads.listRunning(),
       getLastActivity: async (hostId) => {
-        const stored = await bb.storage.kv.get<unknown>(idleKey(hostId));
-        return stored === undefined ? null : z.number().finite().parse(stored);
+        const value = z.number().finite().safeParse(await bb.storage.kv.get<unknown>(idleKey(hostId)));
+        return value.success ? value.data : null;
       },
       bump: bumpIdle,
       suspend: async (hostId) => {
         await bb.sdk.hosts.experimental_suspend({ hostId });
+      },
+      pauseIfStillRunning: async (hostId) => {
+        const resource = await bb.experimental_machines.getResource(hostId);
+        if (resource === null) return false;
+        return backend.pauseIfRunning(
+          backend.parseResource(resource),
+          AbortSignal.timeout(120_000),
+          async () => (await bb.sdk.hosts.get({ hostId })).lifecycle.phase === "suspended",
+        );
       },
       getPhase: async (hostId) => (await bb.sdk.hosts.get({ hostId })).lifecycle.phase,
       log: bb.log,

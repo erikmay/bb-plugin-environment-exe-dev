@@ -10,7 +10,7 @@ export interface IdleSweepDeps {
   providerId: string;
   idleMs: number;
   now: () => number;
-  /** When the previous sweep ran in this process, or null on the first sweep. */
+  /** When the previous sweep ran (persisted), or null when none is recorded. */
   previousSweepAt: number | null;
   listHosts: () => Promise<readonly SweepHost[]>;
   /** Threads with a running turn (status `starting` or `active`) and their host. */
@@ -18,6 +18,11 @@ export interface IdleSweepDeps {
   getLastActivity: (hostId: string) => Promise<number | null>;
   bump: (hostId: string) => Promise<void>;
   suspend: (hostId: string) => Promise<void>;
+  /**
+   * For a machine bb records as suspended: pause its VM if it still runs
+   * (a pause or resume that failed halfway). Returns true when it paused.
+   */
+  pauseIfStillRunning: (hostId: string) => Promise<boolean>;
   getPhase: (hostId: string) => Promise<string | null>;
   log: { info: (message: string) => void; warn: (message: string) => void };
 }
@@ -43,17 +48,29 @@ export const SERVER_STALL_MS = 3 * 60_000;
  * running turns by interrupting them, so pausing one would kill the agent's
  * work. Such machines get their idle clock reset instead.
  *
- * After the bb server was frozen (laptop asleep), every machine's idle clock
- * restarts: the daemons need time to reconnect and deliver what happened while
- * the server could not listen.
+ * After the bb server was frozen (laptop asleep) or restarted, every
+ * machine's idle clock restarts: the daemons need time to reconnect and
+ * deliver what happened while the server could not listen.
+ *
+ * Machines bb records as suspended are checked too: a VM still running there
+ * (a failed pause, or a failed resume after the VM was already started) is
+ * paused, because nothing else would notice it.
  */
 export async function sweepIdleMachines(deps: IdleSweepDeps): Promise<void> {
-  const hosts = (await deps.listHosts()).filter(
-    (host) => host.machineProviderId === deps.providerId && host.lifecycle.phase === "active",
-  );
+  const owned = (await deps.listHosts()).filter((host) => host.machineProviderId === deps.providerId);
+  for (const host of owned.filter((candidate) => candidate.lifecycle.phase === "suspended")) {
+    try {
+      if (await deps.pauseIfStillRunning(host.id)) {
+        deps.log.warn(`exe.dev VM of ${host.id} was still running while bb showed it paused; paused it`);
+      }
+    } catch (error) {
+      deps.log.warn(`Checking the paused exe.dev VM of ${host.id} failed: ${errorMessage(error)}`);
+    }
+  }
+  const hosts = owned.filter((host) => host.lifecycle.phase === "active");
   if (hosts.length === 0) return;
   const serverWasFrozen =
-    deps.previousSweepAt !== null && deps.now() - deps.previousSweepAt > SERVER_STALL_MS;
+    deps.previousSweepAt === null || deps.now() - deps.previousSweepAt > SERVER_STALL_MS;
   const busyHosts = new Set(
     (await deps.listRunningThreads()).flatMap((thread) => (thread.hostId === null ? [] : [thread.hostId])),
   );
@@ -70,7 +87,7 @@ export async function sweepIdleMachines(deps: IdleSweepDeps): Promise<void> {
       }
       if (deps.now() < lastActivity + deps.idleMs) continue;
       await deps.suspend(host.id);
-      deps.log.info(`Paused idle exe.dev machine ${host.id}`);
+      deps.log.info(`Requested pause of idle exe.dev machine ${host.id}`);
     } catch (error) {
       if (hasErrorCode(error, "machine_busy")) continue;
       const phase = await deps.getPhase(host.id).catch(() => null);

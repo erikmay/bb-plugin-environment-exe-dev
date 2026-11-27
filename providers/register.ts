@@ -95,12 +95,21 @@ export function registerSandboxBackend<Resource extends PluginMachineProviderRes
         ...context,
         resource: backend.parseResource(context.resource),
       });
-      await bootstrap({
-        key: backend.allocationKey(resumed.resource),
-        executor: resumed.executor,
-        report: context.report,
-        signal: context.signal,
-      });
+      try {
+        await bootstrap({
+          key: backend.allocationKey(resumed.resource),
+          executor: resumed.executor,
+          report: context.report,
+          signal: context.signal,
+        });
+      } catch (error) {
+        // bb keeps the machine suspended after a failed resume; pause the
+        // compute again instead of leaving it running unnoticed.
+        await backend
+          .suspend({ ...context, signal: AbortSignal.timeout(120_000), resource: resumed.resource })
+          .catch(() => {});
+        throw error;
+      }
       await options.onConnected(context.hostId);
       return { resource: resumed.resource };
     },

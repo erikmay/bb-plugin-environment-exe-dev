@@ -28,7 +28,7 @@ A [bb](https://github.com/get-bb/bb) plugin that runs every thread in its own
   - **Tailscale**: serve bb on your tailnet (`tailscale serve --https=443
     http://127.0.0.1:38886`, `BB_APP_URL` and Settings → Machines → Server URL
     set to the `https://<machine>.<tailnet>.ts.net` address, default machine
-    access `direct`) and set `tailscaleAuthKey`. Each VM then joins the
+    access `direct`) and set a Tailscale OAuth client. Each VM then joins the
     tailnet before bb starts. See "Tailscale" below.
 - An exe.dev account.
 - Agent credentials for the VM, because your local Claude Code / Codex login
@@ -39,7 +39,7 @@ A [bb](https://github.com/get-bb/bb) plugin that runs every thread in its own
 ## Install
 
 ```sh
-bb plugin install git:https://github.com/erikmay/bb-plugin-environment-exe-dev.git@^0.3.0
+bb plugin install git:https://github.com/erikmay/bb-plugin-environment-exe-dev.git@^0.4.0
 ```
 
 Create an API token that can only manage VMs tagged `bb`:
@@ -60,7 +60,9 @@ bb plugin config environment-exe-dev set apiToken <token>
 | Setting | Default | Meaning |
 |---|---|---|
 | `apiToken` | — | exe.dev API token (secret) |
-| `tailscaleAuthKey` | empty | Tailscale auth key (secret); when set, every VM joins your tailnet |
+| `tailscaleOAuthClientId`, `tailscaleOAuthClientSecret` | empty | Tailscale OAuth client (secret); when set, every VM joins your tailnet with its own single-use key |
+| `tailscaleAuthKey` | empty | Fallback without OAuth: a reusable auth key (secret) |
+| `tailscaleTags` | `tag:bb-sandbox` | Tags every VM joins with (required) |
 | `idleMinutes` | `15` | Pause a VM after this many idle minutes; `0` disables |
 | `cpu` | `0` (exe.dev default) | CPUs for new VMs |
 | `memory` | exe.dev default | e.g. `8GB` |
@@ -80,16 +82,25 @@ bb plugin config environment-exe-dev set apiToken <token>
 
 ## Tailscale
 
-With `tailscaleAuthKey` set, the plugin installs Tailscale on each VM and runs
-`tailscale up` with the key (from a 0600 file that is deleted right after,
-never on a command line) before bb bootstraps its daemon. On resume it checks
-the connection and joins again if the node expired while the VM was paused.
-The VM's tailnet name is its exe.dev name.
+With a Tailscale OAuth client configured, the plugin installs Tailscale on
+each VM and joins it to your tailnet before bb bootstraps its daemon:
 
-Create the key in the Tailscale admin (Settings → Keys → Generate auth key):
-**reusable**, **ephemeral** (nodes disappear after the VM is deleted),
-**pre-approved**, tagged e.g. `tag:bb-sandbox`. Limit the tag in your policy
-to the bb server only:
+1. It asks the VM for its Tailscale state first. A VM that is connected and
+   reaches the bb server gets no key at all.
+2. Otherwise it mints a fresh auth key through the Tailscale API: single use,
+   ephemeral, pre-approved, with `tailscaleTags`, valid for five minutes.
+3. The VM runs `tailscale up --reset --force-reauth` with that key,
+   `--advertise-tags`, `--shields-up` and `--accept-routes=false`, then must
+   reach the bb server (`machineServerUrl`) within 30 seconds.
+
+This also repairs a VM whose ephemeral node expired while it was paused
+(Tailscale removes offline ephemeral nodes after 30 to 60 minutes). Before a
+running VM is deleted, the plugin runs `tailscale logout`, so its node
+disappears at once.
+
+Create the OAuth client in the Tailscale admin (Settings → Trust credentials
+→ OAuth client) with the **Auth Keys: write** scope and your sandbox tag. Limit
+the tag in your policy to the bb server only:
 
 ```jsonc
 "tagOwners": { "tag:bb-server": ["autogroup:admin"], "tag:bb-sandbox": ["autogroup:admin"] },
@@ -99,6 +110,13 @@ to the bb server only:
 ],
 ```
 
+Without an OAuth client, `tailscaleAuthKey` takes a reusable, ephemeral,
+pre-approved key with the same tags. Anything sent to a VM can be read there
+(the exe.dev exec API has no stdin, so the key briefly appears in a process
+list, and an agent with full permissions runs as the same user), and a
+reusable key stays valid for up to 90 days. Prefer the OAuth client, whose
+keys are spent by the join.
+
 ## Security notes
 
 - Agents on a VM run with the permission mode you choose (often Full Access)
@@ -107,6 +125,16 @@ to the bb server only:
   default. Prefer a fine-grained token scoped to the repositories you use
   (Settings → Environment variables).
 - The token scope above is the minimum this plugin needs.
+
+## Known limitations
+
+- Idle detection counts thread activity and terminal input. A build or dev
+  server running in a bb terminal without keystrokes can be paused after
+  `idleMinutes`; raise it or set it to `0` for such work.
+- A turn that hangs as "working" keeps its VM from being paused.
+- A VM whose bb machine is gone (for example after the exe.dev token changed)
+  is not deleted automatically. `npm run doctor` with `EXE_TOKEN` lists such
+  orphans.
 
 ## Development
 

@@ -23,7 +23,7 @@ describe("resolveSettings", () => {
       ok: true,
       settings: {
         apiToken: "token",
-        tailscaleAuthKey: null,
+        tailnet: null,
         idleMs: 15 * 60_000,
         cpu: null,
         memory: null,
@@ -33,13 +33,30 @@ describe("resolveSettings", () => {
     });
   });
 
-  it("accepts a Tailscale auth key and rejects anything else", () => {
-    const withKey = resolveSettings({ ...base, tailscaleAuthKey: " tskey-auth-abc " });
-    expect(withKey.ok && withKey.settings.tailscaleAuthKey).toBe("tskey-auth-abc");
-    expect(resolveSettings({ ...base, tailscaleAuthKey: "abc" })).toEqual({
-      ok: false,
-      message: "tailscaleAuthKey must be a Tailscale auth key (tskey-…).",
+  it("prefers an OAuth client and requires tags", () => {
+    const oauth = resolveSettings({
+      ...base,
+      tailscaleOAuthClientId: "kid",
+      tailscaleOAuthClientSecret: "tskey-client-abc",
+      tailscaleAuthKey: "tskey-auth-ignored",
+      tailscaleTags: "tag:bb-sandbox, tag:ci",
     });
+    expect(oauth.ok && oauth.settings.tailnet).toEqual({
+      kind: "oauth",
+      clientId: "kid",
+      clientSecret: "tskey-client-abc",
+      tags: ["tag:bb-sandbox", "tag:ci"],
+    });
+    expect(resolveSettings({ ...base, tailscaleAuthKey: "tskey-auth-a", tailscaleTags: " " }).ok).toBe(false);
+    expect(resolveSettings({ ...base, tailscaleOAuthClientId: "kid" }).ok).toBe(false);
+  });
+
+  it("accepts only auth keys as the static key", () => {
+    const withKey = resolveSettings({ ...base, tailscaleAuthKey: " tskey-auth-abc " });
+    expect(withKey.ok && withKey.settings.tailnet).toEqual({ kind: "key", authKey: "tskey-auth-abc", tags: ["tag:bb-sandbox"] });
+    for (const wrong of ["abc", "tskey-api-abc", "tskey-client-abc"]) {
+      expect(resolveSettings({ ...base, tailscaleAuthKey: wrong }).ok).toBe(false);
+    }
   });
 
   it("turns idleMinutes 0 into no automatic pause", () => {

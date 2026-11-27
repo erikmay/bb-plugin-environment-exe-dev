@@ -48,7 +48,14 @@ These come from `plugins/environment-modal-sandbox/providers/README.md` upstream
   line, logs, or the persisted resource.
 - Never store secrets in the machine resource; it is readable by every plugin.
 - Secrets reach a VM only as 0600 files that the same script deletes
-  (bootstrap stdin, Tailscale auth key), never as command-line arguments.
+  (bootstrap stdin, Tailscale auth key), with a best-effort `rm` if the
+  script never ran and a purge of stale files on every prepare. The exe.dev
+  exec API has no stdin, so `writeFile` briefly puts the data in a VM process
+  list: send only what is spent or short-lived (single-use Tailscale keys from
+  the OAuth client), and send it only when needed.
+- Never leave a VM running behind a machine bb records as suspended: pauses
+  retry, a failed resume pauses again, and the sweep repairs the rest.
+- Every exe.dev call has a client-side timeout.
 - Never idle-pause a machine with a running turn (`bb.sdk.threads.listRunning`).
   bb's suspend interrupts running turns, and a long silent tool call emits no
   thread events, so event timestamps alone are not proof of idleness. Upstream

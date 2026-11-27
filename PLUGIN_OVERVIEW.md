@@ -23,6 +23,9 @@ keep memory and disk. The idle check runs on the bb server.
    `ssh exe.dev "ssh-key generate-api-key --label=bb --tag=bb --cmds='whoami,ls,new,rm,pause,resume,ssh,stat' --exp=365d --json"`
 2. Set it: Settings → Plugins → exe.dev VMs → apiToken, or
    `bb plugin config environment-exe-dev set apiToken <token>`.
-3. The bb server must be reachable from the internet for the VM (bb connect).
+3. The VM must reach the bb server: through bb connect, or through Tailscale
+   (bb served on your tailnet plus a Tailscale OAuth client in the plugin
+   settings; each VM then joins the tailnet with its own single-use key and
+   leaves it when deleted).
 4. Agents need credentials on the VM: Account Pooler or `CLAUDE_CODE_OAUTH_TOKEN`
    in Settings → Environment variables.

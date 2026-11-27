@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ExeAPIError, type ExedevClient, type NewOptions, type VM } from "@exedev/sdk";
 import type { MachineExecutor } from "@get-bb/plugin-sdk";
-import type { SettingsResolution } from "../configuration.js";
+import type { SettingsResolution, TailnetSettings } from "../configuration.js";
 import { createExeDevBackend } from "../providers/exe-dev/backend.js";
 import { vmNameForKey, type ExeDevMachineResource } from "../providers/exe-dev/resource.js";
 import { NODE_SHA256, NODE_VERSION } from "../providers/exe-dev/client.js";
@@ -10,6 +10,10 @@ const EMAIL = "owner@example.com";
 
 class FakeVm {
   status: "running" | "paused" = "running";
+  sshFails = false;
+  tailnetState: "online" | "join" = "join";
+  joinExit = 0;
+  pauseFailures = 0;
   exists = true;
   readonly calls: string[] = [];
   readonly scripts: string[] = [];
@@ -24,6 +28,10 @@ class FakeVm {
   }
   async pause() {
     this.calls.push("pause");
+    if (this.pauseFailures > 0) {
+      this.pauseFailures -= 1;
+      throw new ExeAPIError("pause", 502, "bad gateway");
+    }
     this.status = "paused";
     return { vm_name: this.name, status: "paused" as const };
   }
@@ -40,8 +48,10 @@ class FakeVm {
   async ssh(command: string, options?: { onStdout?: (data: string) => void }) {
     this.calls.push("ssh");
     this.scripts.push(command);
-    options?.onStdout?.("ok\n");
-    return { exitCode: 0, stdout: "", stderr: "", captured: false, stdoutBytes: new Uint8Array(), stderrBytes: new Uint8Array() };
+    if (this.sshFails) throw new Error("ssh failed");
+    options?.onStdout?.(command.includes('echo "STATE=$result"') ? `STATE=${this.tailnetState}\n` : "ok\n");
+    const exitCode = command.includes("tailscale up") ? this.joinExit : 0;
+    return { exitCode, stdout: "", stderr: "", captured: false, stdoutBytes: new Uint8Array(), stderrBytes: new Uint8Array() };
   }
   async writeFile(path: string, data: unknown, options?: { mode?: number }) {
     this.calls.push("writeFile");
@@ -49,7 +59,7 @@ class FakeVm {
   }
 }
 
-function setup(options: { email?: string; tailscaleAuthKey?: string } = {}) {
+function setup(options: { email?: string; tailnet?: TailnetSettings | null; fetch?: typeof fetch } = {}) {
   const vms = new Map<string, FakeVm>();
   const created: NewOptions[] = [];
   const client = {
@@ -74,7 +84,7 @@ function setup(options: { email?: string; tailscaleAuthKey?: string } = {}) {
     ok: true,
     settings: {
       apiToken: "t",
-      tailscaleAuthKey: options.tailscaleAuthKey ?? null,
+      tailnet: options.tailnet ?? null,
       idleMs: 60_000,
       cpu: 4,
       memory: null,
@@ -85,6 +95,8 @@ function setup(options: { email?: string; tailscaleAuthKey?: string } = {}) {
   const backend = createExeDevBackend({
     currentSettings: async () => settings,
     clientFactory: () => client,
+    serverUrl: async () => "https://bb.example.ts.net",
+    fetch: options.fetch,
   });
   const report = { step: vi.fn(), log: vi.fn() };
   const signal = new AbortController().signal;
@@ -92,36 +104,141 @@ function setup(options: { email?: string; tailscaleAuthKey?: string } = {}) {
 }
 
 describe("exe.dev backend", () => {
-  it("does not touch Tailscale without an auth key", async () => {
+  it("does not touch Tailscale without tailnet settings", async () => {
     const { backend, report, signal, vms } = setup();
     await backend.create({ key: "thr_plain", attempt: 1, report, signal, checkpoint: async () => {} });
     const vm = vms.get(vmNameForKey("thr_plain"));
     expect(vm?.scripts.some((script) => script.includes("tailscale"))).toBe(false);
   });
 
-  it("joins the tailnet with the key in a 0600 file, never on the command line", async () => {
+  it("joins with the key in a file the script deletes, never on the command line", async () => {
     const key = "tskey-auth-secretvalue";
-    const { backend, report, signal, vms } = setup({ tailscaleAuthKey: key });
+    const { backend, report, signal, vms } = setup({ tailnet: { kind: "key", authKey: key, tags: ["tag:bb-sandbox"] } });
     await backend.create({ key: "thr_ts", attempt: 1, report, signal, checkpoint: async () => {} });
     const vm = vms.get(vmNameForKey("thr_ts"));
     const keyFile = vm?.files.find((file) => file.path.startsWith(".bb-exe-dev/tailscale-"));
     expect(keyFile).toMatchObject({ data: key, mode: 0o600 });
     const join = vm?.scripts.find((script) => script.includes("tailscale up")) ?? "";
     expect(join).toContain('--auth-key="file:$f"');
-    expect(join).toContain("trap 'rm -f \"$f\"' EXIT");
+    expect(join).toContain("--advertise-tags=tag:bb-sandbox");
+    expect(join).toContain("--shields-up");
+    expect(join).toContain("--accept-routes=false");
+    expect(join).toContain("--force-reauth");
+    expect(join).toContain("url=https://bb.example.ts.net");
     expect(vm?.scripts.join("\n")).not.toContain(key);
-    expect(report.step).toHaveBeenCalledWith(expect.stringContaining("to the tailnet"));
+    expect(vm?.scripts.at(-1)).toContain(`rm -f "$HOME/${keyFile?.path}"`);
   });
 
-  it("rejoins the tailnet on resume", async () => {
-    const { backend, report, signal, vms } = setup({ tailscaleAuthKey: "tskey-auth-x" });
-    const name = vmNameForKey("thr_tr");
+  it("sends no key when the VM is already on the tailnet and reaches the server", async () => {
+    const fetchSpy = vi.fn();
+    const { backend, report, signal, vms } = setup({
+      tailnet: { kind: "oauth", clientId: "id", clientSecret: "tskey-client-x", tags: ["tag:bb-sandbox"] },
+      fetch: fetchSpy as unknown as typeof fetch,
+    });
+    const name = vmNameForKey("thr_on");
     const vm = new FakeVm(name);
     vm.status = "paused";
+    vm.tailnetState = "online";
     vms.set(name, vm);
-    const resource: ExeDevMachineResource = { key: "thr_tr", vmName: name, accountEmail: EMAIL };
+    const resource: ExeDevMachineResource = { key: "thr_on", vmName: name, accountEmail: EMAIL };
     await backend.resume({ hostId: "host_1", resource, report, signal, checkpoint: async () => {} });
-    expect(vm.scripts.some((script) => script.includes("tailscale status --peers=false"))).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(vm.files.some((file) => file.path.includes("tailscale-"))).toBe(false);
+  });
+
+  it("mints a single-use, ephemeral, tagged key per join with an OAuth client", async () => {
+    const requests: { url: string; body: string }[] = [];
+    const fakeFetch = vi.fn(async (url: string, init: RequestInit) => {
+      requests.push({ url, body: String(init.body) });
+      const payload = url.endsWith("/oauth/token") ? { access_token: "at" } : { key: "tskey-auth-minted" };
+      return new Response(JSON.stringify(payload), { status: 200 });
+    });
+    const { backend, report, signal, vms } = setup({
+      tailnet: { kind: "oauth", clientId: "id", clientSecret: "tskey-client-x", tags: ["tag:bb-sandbox"] },
+      fetch: fakeFetch as unknown as typeof fetch,
+    });
+    await backend.create({ key: "thr_oauth", attempt: 1, report, signal, checkpoint: async () => {} });
+    const keyRequest = JSON.parse(requests[1]?.body ?? "{}");
+    expect(keyRequest.capabilities.devices.create).toEqual({
+      reusable: false,
+      ephemeral: true,
+      preauthorized: true,
+      tags: ["tag:bb-sandbox"],
+    });
+    expect(keyRequest.expirySeconds).toBe(300);
+    const vm = vms.get(vmNameForKey("thr_oauth"));
+    expect(vm?.files.find((file) => file.path.includes("tailscale-"))?.data).toBe("tskey-auth-minted");
+  });
+
+  it("pauses the VM again when the tailnet join fails during resume", async () => {
+    const { backend, report, signal, vms } = setup({ tailnet: { kind: "key", authKey: "tskey-auth-x", tags: ["tag:bb-sandbox"] } });
+    const name = vmNameForKey("thr_fail");
+    const vm = new FakeVm(name);
+    vm.status = "paused";
+    vm.joinExit = 3;
+    vms.set(name, vm);
+    const resource: ExeDevMachineResource = { key: "thr_fail", vmName: name, accountEmail: EMAIL };
+    await expect(
+      backend.resume({ hostId: "host_1", resource, report, signal, checkpoint: async () => {} }),
+    ).rejects.toThrow(/cannot reach the bb server/);
+    expect(vm.status).toBe("paused");
+  });
+
+  it("retries a failed pause", async () => {
+    vi.useFakeTimers();
+    try {
+      const { backend, report, signal, vms } = setup();
+      const name = vmNameForKey("thr_retry_pause");
+      const vm = new FakeVm(name);
+      vm.pauseFailures = 1;
+      vms.set(name, vm);
+      const resource: ExeDevMachineResource = { key: "thr_retry_pause", vmName: name, accountEmail: EMAIL };
+      const done = backend.suspend({ hostId: "host_1", resource, report, signal, checkpoint: async () => {} });
+      await vi.advanceTimersByTimeAsync(3_000);
+      await done;
+      expect(vm.status).toBe("paused");
+      expect(vm.calls.filter((call) => call === "pause")).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pauses a VM that runs although bb shows it paused, unless a resume started", async () => {
+    const { backend, signal, vms } = setup();
+    const name = vmNameForKey("thr_leak");
+    const vm = new FakeVm(name);
+    vms.set(name, vm);
+    const resource: ExeDevMachineResource = { key: "thr_leak", vmName: name, accountEmail: EMAIL };
+    expect(await backend.pauseIfRunning(resource, signal, async () => false)).toBe(false);
+    expect(vm.status).toBe("running");
+    expect(await backend.pauseIfRunning(resource, signal, async () => true)).toBe(true);
+    expect(vm.status).toBe("paused");
+    expect(await backend.pauseIfRunning(resource, signal)).toBe(false);
+  });
+
+  it("logs a running VM out of the tailnet before deleting it", async () => {
+    const { backend, report, signal, vms } = setup();
+    const name = vmNameForKey("thr_out");
+    const vm = new FakeVm(name);
+    vms.set(name, vm);
+    const resource: ExeDevMachineResource = { key: "thr_out", vmName: name, accountEmail: EMAIL };
+    await backend.remove({ hostId: "host_1", resource, report, signal });
+    expect(vm.scripts.at(-1)).toContain("tailscale logout");
+    expect(vm.calls.slice(-2)).toEqual(["ssh", "rm"]);
+  });
+
+  it("deletes a paused VM without waking it, and still deletes when logout fails", async () => {
+    const { backend, report, signal, vms } = setup();
+    const paused = new FakeVm(vmNameForKey("thr_p"));
+    paused.status = "paused";
+    vms.set(paused.name, paused);
+    await backend.reconcileCleanup({ key: "thr_p", report, signal });
+    expect(paused.calls).toEqual(["rm"]);
+    const failing = new FakeVm(vmNameForKey("thr_f"));
+    failing.sshFails = true;
+    vms.set(failing.name, failing);
+    await backend.reconcileCleanup({ key: "thr_f", report, signal });
+    expect(failing.exists).toBe(false);
   });
 
   it("creates a VM named from the launch key and checkpoints it", async () => {

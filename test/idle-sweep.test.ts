@@ -11,15 +11,22 @@ function setup(options: {
   suspendError?: Error;
   phase?: string;
   previousSweepAt?: number | null;
+  stillRunning?: string[];
 }) {
   const suspended: string[] = [];
   const bumped: string[] = [];
   const warnings: string[] = [];
+  const repaused: string[] = [];
   const deps: IdleSweepDeps = {
     providerId: "exe-dev",
     idleMs: IDLE_MS,
     now: () => options.now ?? IDLE_MS * 2,
-    previousSweepAt: options.previousSweepAt === undefined ? null : options.previousSweepAt,
+    previousSweepAt: options.previousSweepAt === undefined ? (options.now ?? IDLE_MS * 2) - 60_000 : options.previousSweepAt,
+    pauseIfStillRunning: async (hostId) => {
+      if (!options.stillRunning?.includes(hostId)) return false;
+      repaused.push(hostId);
+      return true;
+    },
     listHosts: async () => options.hosts,
     listRunningThreads: async () => options.running ?? [],
     getLastActivity: async (hostId) => options.lastActivity?.[hostId] ?? null,
@@ -31,7 +38,7 @@ function setup(options: {
     getPhase: async () => options.phase ?? "active",
     log: { info: () => {}, warn: (message) => void warnings.push(message) },
   };
-  return { deps, suspended, bumped, warnings };
+  return { deps, suspended, bumped, warnings, repaused };
 }
 
 const host = (id: string, phase = "active", machineProviderId: string | null = "exe-dev"): SweepHost => ({
@@ -69,6 +76,20 @@ describe("sweepIdleMachines", () => {
     await sweepIdleMachines(t.deps);
     expect(t.suspended).toEqual([]);
     expect(t.bumped).toEqual(["h1"]);
+  });
+
+  it("restarts every idle clock when no sweep is recorded (bb restarted)", async () => {
+    const t = setup({ hosts: [host("h1")], lastActivity: { h1: 0 }, previousSweepAt: null });
+    await sweepIdleMachines(t.deps);
+    expect(t.suspended).toEqual([]);
+    expect(t.bumped).toEqual(["h1"]);
+  });
+
+  it("pauses VMs that still run behind a suspended machine", async () => {
+    const t = setup({ hosts: [host("s1", "suspended"), host("s2", "suspended")], stillRunning: ["s2"] });
+    await sweepIdleMachines(t.deps);
+    expect(t.repaused).toEqual(["s2"]);
+    expect(t.warnings).toEqual(["exe.dev VM of s2 was still running while bb showed it paused; paused it"]);
   });
 
   it("pauses normally when the previous sweep was a minute ago", async () => {

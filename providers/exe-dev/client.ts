@@ -22,6 +22,11 @@ export NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=f
 
 const PREREQUISITES_SCRIPT = `set -eu
 ${SESSION_ENV}
+# Secret files (bootstrap stdin, auth keys) live here only while a command
+# runs; remove any left behind by an interrupted call.
+mkdir -p "$HOME/${STDIN_DIR}"
+chmod 700 "$HOME/${STDIN_DIR}"
+find "$HOME/${STDIN_DIR}" -type f -mmin +15 -delete 2>/dev/null || true
 need_node=1
 if command -v node >/dev/null 2>&1; then
   version=$(node -p 'process.versions.node')
@@ -89,42 +94,140 @@ export async function ensurePrerequisites(
   }
 }
 
+// Prints "online" when tailscaled runs, is connected and reaches the bb
+// server; otherwise the backend state (NeedsLogin, Starting, ...) or "none".
+const TAILNET_FUNCS = `state() {
+  sudo tailscale status --json 2>/dev/null | python3 -c 'import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("none"); sys.exit()
+s = d.get("BackendState") or "none"
+print("online" if s == "Running" and (d.get("Self") or {}).get("Online") else s)' 2>/dev/null || echo none
+}
+reachable() { [ -z "$url" ] || curl -fsS -o /dev/null --max-time 10 "$url"; }`;
+
+export interface TailnetJoin {
+  /** Mints or returns the auth key; called only when the VM must (re)join. */
+  authKey: () => Promise<string>;
+  tags: readonly string[];
+  /** The bb server address the VM must reach, or null to skip the check. */
+  serverUrl: string | null;
+}
+
 /**
- * Joins the VM to the tailnet with an auth key, so it can reach a bb server
- * that is only served over Tailscale. The key travels in a 0600 file that is
- * deleted afterwards, never on a command line. Idempotent: a VM that is
- * already connected is left alone; one whose ephemeral node expired while it
- * was paused joins again.
+ * Makes sure the VM is on the tailnet and reaches the bb server before bb
+ * bootstraps its daemon. A first call installs Tailscale and only reports
+ * the state; the auth key is minted and sent only when a join is needed (a
+ * new VM, or one whose ephemeral node expired while it was paused, which
+ * tailscaled may still believe is Running right after a restore, so the
+ * server's reachability decides). The key travels in a file that the join
+ * script deletes, and the join is verified before returning.
  */
 export async function ensureTailnet(
   vm: VM,
-  authKey: string,
+  join: TailnetJoin,
   report: PluginMachineProviderProgress,
   signal: AbortSignal,
 ): Promise<void> {
-  report.step(`Joining exe.dev VM ${vm.name} to the tailnet…`);
-  const keyPath = `${STDIN_DIR}/tailscale-${randomUUID()}`;
-  await vm.writeFile(keyPath, authKey, { mode: 0o600, signal });
-  const script = `set -eu
-f="$HOME/${keyPath}"
-trap 'rm -f "$f"' EXIT
+  report.step(`Connecting exe.dev VM ${vm.name} to the tailnet…`);
+  const url = `url=${quote(join.serverUrl ?? "")}`;
+  let output = "";
+  const probe = await vm.ssh(
+    `set -eu
+${url}
 if ! command -v tailscale >/dev/null 2>&1; then
   echo "Installing Tailscale"
-  curl -fsSL --retry 3 https://tailscale.com/install.sh | sudo sh >/dev/null
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  curl -fsSL --retry 3 https://tailscale.com/install.sh -o "$tmp/install.sh"
+  sudo sh "$tmp/install.sh" >/dev/null
 fi
 sudo systemctl enable --now tailscaled >/dev/null 2>&1 || true
-if ! sudo tailscale status --peers=false >/dev/null 2>&1; then
-  sudo tailscale up --auth-key="file:$f" --hostname=${quote(vm.name)} --timeout=90s
-fi
-echo "tailnet address $(tailscale ip -4 | head -n 1)"`;
-  const result = await vm.ssh(script, {
-    signal,
-    capture: false,
-    onStdout: (chunk) => report.log(chunk),
-    onStderr: (chunk) => report.log(chunk),
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(`Joining the tailnet failed (exit ${result.exitCode}). Check the Tailscale auth key in the plugin settings.`);
+${TAILNET_FUNCS}
+result=join
+for _ in $(seq 20); do
+  s=$(state)
+  case "$s" in
+    online) if reachable; then result=online; fi; break ;;
+    NeedsLogin|NeedsMachineAuth|Stopped|NoState) break ;;
+  esac
+  sleep 1
+done
+echo "STATE=$result"`,
+    {
+      signal,
+      capture: false,
+      onStdout: (chunk) => {
+        output += chunk;
+        report.log(chunk.replace(/^STATE=.*$/gmu, ""));
+      },
+      onStderr: (chunk) => report.log(chunk),
+    },
+  );
+  if (probe.exitCode !== 0) {
+    throw new Error(`Installing or starting Tailscale on the VM failed (exit ${probe.exitCode}).`);
+  }
+  if (/^STATE=online$/mu.test(output)) {
+    report.log("Already on the tailnet\n");
+    return;
+  }
+  const keyPath = `${STDIN_DIR}/tailscale-${randomUUID()}`;
+  await vm.writeFile(keyPath, await join.authKey(), { mode: 0o600, signal });
+  try {
+    const result = await vm.ssh(
+      `set -eu
+${url}
+f="$HOME/${keyPath}"
+trap 'rm -f "$f"' EXIT
+sudo tailscale up --reset --force-reauth --auth-key="file:$f" --hostname=${quote(vm.name)} \\
+  --advertise-tags=${quote(join.tags.join(","))} --shields-up --accept-routes=false --timeout=90s
+rm -f "$f"
+${TAILNET_FUNCS}
+for _ in $(seq 30); do
+  if [ "$(state)" = online ] && reachable; then
+    echo "tailnet address $(tailscale ip -4 | head -n 1)"
+    exit 0
+  fi
+  sleep 1
+done
+echo "The VM joined the tailnet but cannot reach the bb server\${url:+ at $url}" >&2
+exit 3`,
+      {
+        signal,
+        capture: false,
+        onStdout: (chunk) => report.log(chunk),
+        onStderr: (chunk) => report.log(chunk),
+      },
+    );
+    if (result.exitCode === 3) {
+      throw new Error("The VM joined the tailnet but cannot reach the bb server. Check the tailnet policy for the VM's tags.");
+    }
+    if (result.exitCode !== 0) {
+      throw new Error(`Joining the tailnet failed (exit ${result.exitCode}). Check the Tailscale settings of the plugin.`);
+    }
+  } finally {
+    await vm.ssh(`rm -f "$HOME/${keyPath}"`, { signal: AbortSignal.timeout(15_000), capture: false }).catch(() => {});
+  }
+}
+
+const LEAVE_TAILNET_TIMEOUT_MS = 20_000;
+
+/**
+ * Best effort before a VM is deleted: `tailscale logout` removes its
+ * ephemeral node from the tailnet at once instead of 30-60 minutes later.
+ * Skipped for paused VMs (their node is already offline and expires on its
+ * own); failures never block the deletion.
+ */
+export async function leaveTailnet(vm: VM, signal: AbortSignal): Promise<void> {
+  if (isPaused(vm)) return;
+  try {
+    await vm.ssh("if command -v tailscale >/dev/null 2>&1; then sudo tailscale logout >/dev/null 2>&1 || true; fi", {
+      signal: AbortSignal.any([signal, AbortSignal.timeout(LEAVE_TAILNET_TIMEOUT_MS)]),
+      capture: false,
+    });
+  } catch {
+    // The VM is about to be deleted; its node expires on its own.
   }
 }
 
@@ -138,13 +241,19 @@ export function createExeDevExecutor(vm: VM): MachineExecutor {
 f="$HOME/${stdinPath}"
 trap 'rm -f "$f"' EXIT
 timeout -k ${KILL_GRACE_SECONDS} ${seconds} ${command.map(quote).join(" ")} < "$f"`;
-      const result = await vm.ssh(script, {
-        signal,
-        capture: false,
-        onStdout: onOutput,
-        onStderr: onOutput,
-      });
-      return { exitCode: result.exitCode };
+      try {
+        const result = await vm.ssh(script, {
+          signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs + (KILL_GRACE_SECONDS + 30) * 1000)]),
+          capture: false,
+          onStdout: onOutput,
+          onStderr: onOutput,
+        });
+        return { exitCode: result.exitCode };
+      } catch (error) {
+        // bb shows only a generic message for a thrown executor error.
+        onOutput(`exe.dev: ${error instanceof Error ? error.message : String(error)}\n`);
+        throw error;
+      }
     },
   };
 }

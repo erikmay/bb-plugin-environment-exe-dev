@@ -1,0 +1,31 @@
+import { describe, expect, it, vi } from "vitest";
+import { authKeyForJoin } from "../providers/exe-dev/tailscale.js";
+
+const oauth = { kind: "oauth", clientId: "kid", clientSecret: "tskey-client-supersecret", tags: ["tag:bb-sandbox"] } as const;
+
+describe("authKeyForJoin", () => {
+  it("returns a static key unchanged without calling Tailscale", async () => {
+    const fetchSpy = vi.fn();
+    const key = await authKeyForJoin({ kind: "key", authKey: "tskey-auth-a", tags: ["tag:x"] }, { fetch: fetchSpy as unknown as typeof fetch });
+    expect(key).toBe("tskey-auth-a");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("explains a refused OAuth client without echoing the secret", async () => {
+    const fakeFetch = vi.fn(async () => new Response("denied", { status: 401 }));
+    const error = await authKeyForJoin(oauth, { fetch: fakeFetch as unknown as typeof fetch }).catch((e: Error) => e);
+    expect(String(error)).toMatch(/refused the OAuth client \(HTTP 401\)/);
+    expect(String(error)).not.toContain("supersecret");
+  });
+
+  it("names the scope and tags when Tailscale refuses to create a key", async () => {
+    const fakeFetch = vi.fn(async (url: string) =>
+      url.endsWith("/oauth/token")
+        ? new Response(JSON.stringify({ access_token: "at" }), { status: 200 })
+        : new Response("forbidden", { status: 403 }),
+    );
+    await expect(authKeyForJoin(oauth, { fetch: fakeFetch as unknown as typeof fetch })).rejects.toThrow(
+      /auth_keys scope and must own tag:bb-sandbox/,
+    );
+  });
+});

@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.0 — 2026-11-27
+
+Changes from an independent code review.
+
+- Tailscale: OAuth client support (`tailscaleOAuthClientId`,
+  `tailscaleOAuthClientSecret`). Every join gets its own single-use,
+  ephemeral, pre-approved, five-minute key, so nothing reusable reaches a VM.
+  The static `tailscaleAuthKey` stays as a fallback and must be a
+  `tskey-auth-` key. New `tailscaleTags` (default `tag:bb-sandbox`, required).
+- Tailscale join is checked, not assumed: the plugin probes the VM first and
+  sends a key only when needed, joins with `--reset --force-reauth
+  --advertise-tags --shields-up --accept-routes=false`, and requires the VM to
+  reach the bb server. This fixes VMs whose ephemeral node expired during a
+  long pause.
+- Before a running VM is deleted it runs `tailscale logout`, so its node
+  leaves the tailnet at once.
+- No more VMs billed behind bb's back: pauses retry, a failed resume pauses
+  the VM again, and the idle sweep pauses VMs that still run while bb shows
+  their machine as suspended.
+- The time of the last idle sweep is stored, so a bb restart no longer pauses
+  VMs before their daemons reconnect. A corrupt idle value no longer warns
+  every minute.
+- Client-side timeouts on every exe.dev call (account check, boot, pause,
+  delete, commands); executor errors are shown in the provisioning log.
+- Stale secret files in `~/.bb-exe-dev` are purged; the Tailscale installer is
+  downloaded before it runs, so a failed download reports correctly.
+
 ## 0.3.0 — 2026-11-27
 
 - Tailscale: new optional secret setting `tailscaleAuthKey`. When set, every
