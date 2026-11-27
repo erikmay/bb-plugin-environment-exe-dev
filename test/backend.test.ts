@@ -12,6 +12,8 @@ class FakeVm {
   status: "running" | "paused" = "running";
   exists = true;
   readonly calls: string[] = [];
+  readonly scripts: string[] = [];
+  readonly files: { path: string; data: unknown; mode?: number }[] = [];
   constructor(readonly name: string) {}
   get info() {
     return { name: this.name, tags: [], status: this.status };
@@ -35,17 +37,19 @@ class FakeVm {
     if (!this.exists) throw new ExeAPIError("rm", 404, "not found");
     this.exists = false;
   }
-  async ssh(_command: string, options?: { onStdout?: (data: string) => void }) {
+  async ssh(command: string, options?: { onStdout?: (data: string) => void }) {
     this.calls.push("ssh");
+    this.scripts.push(command);
     options?.onStdout?.("ok\n");
     return { exitCode: 0, stdout: "", stderr: "", captured: false, stdoutBytes: new Uint8Array(), stderrBytes: new Uint8Array() };
   }
-  async writeFile() {
+  async writeFile(path: string, data: unknown, options?: { mode?: number }) {
     this.calls.push("writeFile");
+    this.files.push({ path, data, mode: options?.mode });
   }
 }
 
-function setup(options: { email?: string } = {}) {
+function setup(options: { email?: string; tailscaleAuthKey?: string } = {}) {
   const vms = new Map<string, FakeVm>();
   const created: NewOptions[] = [];
   const client = {
@@ -68,7 +72,15 @@ function setup(options: { email?: string } = {}) {
   } as unknown as ExedevClient;
   const settings: SettingsResolution = {
     ok: true,
-    settings: { apiToken: "t", idleMs: 60_000, cpu: 4, memory: null, disk: null, image: null },
+    settings: {
+      apiToken: "t",
+      tailscaleAuthKey: options.tailscaleAuthKey ?? null,
+      idleMs: 60_000,
+      cpu: 4,
+      memory: null,
+      disk: null,
+      image: null,
+    },
   };
   const backend = createExeDevBackend({
     currentSettings: async () => settings,
@@ -80,6 +92,38 @@ function setup(options: { email?: string } = {}) {
 }
 
 describe("exe.dev backend", () => {
+  it("does not touch Tailscale without an auth key", async () => {
+    const { backend, report, signal, vms } = setup();
+    await backend.create({ key: "thr_plain", attempt: 1, report, signal, checkpoint: async () => {} });
+    const vm = vms.get(vmNameForKey("thr_plain"));
+    expect(vm?.scripts.some((script) => script.includes("tailscale"))).toBe(false);
+  });
+
+  it("joins the tailnet with the key in a 0600 file, never on the command line", async () => {
+    const key = "tskey-auth-secretvalue";
+    const { backend, report, signal, vms } = setup({ tailscaleAuthKey: key });
+    await backend.create({ key: "thr_ts", attempt: 1, report, signal, checkpoint: async () => {} });
+    const vm = vms.get(vmNameForKey("thr_ts"));
+    const keyFile = vm?.files.find((file) => file.path.startsWith(".bb-exe-dev/tailscale-"));
+    expect(keyFile).toMatchObject({ data: key, mode: 0o600 });
+    const join = vm?.scripts.find((script) => script.includes("tailscale up")) ?? "";
+    expect(join).toContain('--auth-key="file:$f"');
+    expect(join).toContain("trap 'rm -f \"$f\"' EXIT");
+    expect(vm?.scripts.join("\n")).not.toContain(key);
+    expect(report.step).toHaveBeenCalledWith(expect.stringContaining("to the tailnet"));
+  });
+
+  it("rejoins the tailnet on resume", async () => {
+    const { backend, report, signal, vms } = setup({ tailscaleAuthKey: "tskey-auth-x" });
+    const name = vmNameForKey("thr_tr");
+    const vm = new FakeVm(name);
+    vm.status = "paused";
+    vms.set(name, vm);
+    const resource: ExeDevMachineResource = { key: "thr_tr", vmName: name, accountEmail: EMAIL };
+    await backend.resume({ hostId: "host_1", resource, report, signal, checkpoint: async () => {} });
+    expect(vm.scripts.some((script) => script.includes("tailscale status --peers=false"))).toBe(true);
+  });
+
   it("creates a VM named from the launch key and checkpoints it", async () => {
     const { backend, created, report, signal, vms } = setup();
     const checkpoint = vi.fn(async () => {});

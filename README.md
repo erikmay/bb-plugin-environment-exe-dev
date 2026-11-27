@@ -22,8 +22,14 @@ A [bb](https://github.com/get-bb/bb) plugin that runs every thread in its own
 
 ## Requirements
 
-- bb ≥ 0.50 with **bb connect** set up (Settings → bb connect). The VM is on the
-  public internet and reaches your bb server through it.
+- bb ≥ 0.50 and a server address the VM can reach. Either:
+  - **bb connect** (Settings → bb connect): the VM reaches your server through
+    getbb.app; or
+  - **Tailscale**: serve bb on your tailnet (`tailscale serve --https=443
+    http://127.0.0.1:38886`, `BB_APP_URL` and Settings → Machines → Server URL
+    set to the `https://<machine>.<tailnet>.ts.net` address, default machine
+    access `direct`) and set `tailscaleAuthKey`. Each VM then joins the
+    tailnet before bb starts. See "Tailscale" below.
 - An exe.dev account.
 - Agent credentials for the VM, because your local Claude Code / Codex login
   does not travel with it. Use bb's Account Pooler plugin, or set
@@ -33,7 +39,7 @@ A [bb](https://github.com/get-bb/bb) plugin that runs every thread in its own
 ## Install
 
 ```sh
-bb plugin install git:https://github.com/erikmay/bb-plugin-environment-exe-dev.git@^0.2.0
+bb plugin install git:https://github.com/erikmay/bb-plugin-environment-exe-dev.git@^0.3.0
 ```
 
 Create an API token that can only manage VMs tagged `bb`:
@@ -54,6 +60,7 @@ bb plugin config environment-exe-dev set apiToken <token>
 | Setting | Default | Meaning |
 |---|---|---|
 | `apiToken` | — | exe.dev API token (secret) |
+| `tailscaleAuthKey` | empty | Tailscale auth key (secret); when set, every VM joins your tailnet |
 | `idleMinutes` | `15` | Pause a VM after this many idle minutes; `0` disables |
 | `cpu` | `0` (exe.dev default) | CPUs for new VMs |
 | `memory` | exe.dev default | e.g. `8GB` |
@@ -70,6 +77,27 @@ bb plugin config environment-exe-dev set apiToken <token>
 3. Pause and resume map to exe.dev `pause`/`resume`. Delete maps to `rm`.
 4. Idle tracking runs on your bb server, like bb's Modal plugin. **If the bb
    server is asleep or stopped, nothing pauses idle VMs.**
+
+## Tailscale
+
+With `tailscaleAuthKey` set, the plugin installs Tailscale on each VM and runs
+`tailscale up` with the key (from a 0600 file that is deleted right after,
+never on a command line) before bb bootstraps its daemon. On resume it checks
+the connection and joins again if the node expired while the VM was paused.
+The VM's tailnet name is its exe.dev name.
+
+Create the key in the Tailscale admin (Settings → Keys → Generate auth key):
+**reusable**, **ephemeral** (nodes disappear after the VM is deleted),
+**pre-approved**, tagged e.g. `tag:bb-sandbox`. Limit the tag in your policy
+to the bb server only:
+
+```jsonc
+"tagOwners": { "tag:bb-server": ["autogroup:admin"], "tag:bb-sandbox": ["autogroup:admin"] },
+"grants": [
+  { "src": ["autogroup:member"], "dst": ["tag:bb-server"], "ip": ["tcp:443"] },
+  { "src": ["tag:bb-sandbox"], "dst": ["tag:bb-server"], "ip": ["tcp:443"] },
+],
+```
 
 ## Security notes
 

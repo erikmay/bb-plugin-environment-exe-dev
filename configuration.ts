@@ -6,6 +6,14 @@ export const SETTING_DESCRIPTORS = {
     description:
       "A tag-scoped exe.dev API token: ssh exe.dev ssh-key generate-api-key --tag=bb --cmds='whoami,ls,new,rm,pause,resume,ssh,stat' --json",
   },
+  tailscaleAuthKey: {
+    type: "string",
+    secret: true,
+    label: "Tailscale auth key",
+    description:
+      "Optional. Joins each VM to your tailnet before bb starts, for a bb server reachable only over Tailscale. Use a reusable, ephemeral, pre-approved key tagged for sandboxes (e.g. tag:bb-sandbox).",
+    default: "",
+  },
   idleMinutes: {
     type: "number",
     label: "Pause after idle (minutes)",
@@ -42,6 +50,7 @@ export const SETTING_DESCRIPTORS = {
 
 export interface ResolvedSettings {
   apiToken: string;
+  tailscaleAuthKey: string | null;
   idleMs: number | null;
   cpu: number | null;
   memory: string | null;
@@ -55,6 +64,7 @@ export type SettingsResolution =
 
 export interface RawSettings {
   apiToken: string | undefined;
+  tailscaleAuthKey?: string | undefined;
   idleMinutes: number;
   cpu: number;
   memory: string;
@@ -100,10 +110,15 @@ export function resolveSettings(raw: RawSettings): SettingsResolution {
   const disk = optionalSize("disk", raw.disk);
   if (!disk.ok) return disk;
   const image = raw.image.trim();
+  const tailscaleAuthKey = (raw.tailscaleAuthKey ?? "").trim();
+  if (tailscaleAuthKey.length > 0 && !tailscaleAuthKey.startsWith("tskey-")) {
+    return { ok: false, message: "tailscaleAuthKey must be a Tailscale auth key (tskey-…)." };
+  }
   return {
     ok: true,
     settings: {
       apiToken,
+      tailscaleAuthKey: tailscaleAuthKey.length === 0 ? null : tailscaleAuthKey,
       idleMs: raw.idleMinutes === 0 ? null : raw.idleMinutes * 60_000,
       cpu: raw.cpu === 0 ? null : raw.cpu,
       memory: memory.value,

@@ -89,6 +89,45 @@ export async function ensurePrerequisites(
   }
 }
 
+/**
+ * Joins the VM to the tailnet with an auth key, so it can reach a bb server
+ * that is only served over Tailscale. The key travels in a 0600 file that is
+ * deleted afterwards, never on a command line. Idempotent: a VM that is
+ * already connected is left alone; one whose ephemeral node expired while it
+ * was paused joins again.
+ */
+export async function ensureTailnet(
+  vm: VM,
+  authKey: string,
+  report: PluginMachineProviderProgress,
+  signal: AbortSignal,
+): Promise<void> {
+  report.step(`Joining exe.dev VM ${vm.name} to the tailnet…`);
+  const keyPath = `${STDIN_DIR}/tailscale-${randomUUID()}`;
+  await vm.writeFile(keyPath, authKey, { mode: 0o600, signal });
+  const script = `set -eu
+f="$HOME/${keyPath}"
+trap 'rm -f "$f"' EXIT
+if ! command -v tailscale >/dev/null 2>&1; then
+  echo "Installing Tailscale"
+  curl -fsSL --retry 3 https://tailscale.com/install.sh | sudo sh >/dev/null
+fi
+sudo systemctl enable --now tailscaled >/dev/null 2>&1 || true
+if ! sudo tailscale status --peers=false >/dev/null 2>&1; then
+  sudo tailscale up --auth-key="file:$f" --hostname=${quote(vm.name)} --timeout=90s
+fi
+echo "tailnet address $(tailscale ip -4 | head -n 1)"`;
+  const result = await vm.ssh(script, {
+    signal,
+    capture: false,
+    onStdout: (chunk) => report.log(chunk),
+    onStderr: (chunk) => report.log(chunk),
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(`Joining the tailnet failed (exit ${result.exitCode}). Check the Tailscale auth key in the plugin settings.`);
+  }
+}
+
 export function createExeDevExecutor(vm: VM): MachineExecutor {
   return {
     async exec({ command, stdin, timeoutMs, signal, onOutput }) {

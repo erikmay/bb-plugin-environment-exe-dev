@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 — 2026-11-27
+
+- Tailscale: new optional secret setting `tailscaleAuthKey`. When set, every
+  VM installs Tailscale and joins your tailnet (key from a 0600 file, never on
+  a command line) before bb bootstraps, so a bb server served only on the
+  tailnet works without bb connect. Resume rejoins when the ephemeral node
+  expired during a pause.
+
 ## 0.2.2 — 2026-11-26
 
 - Fix: idle pause no longer interrupts a working agent. A turn that waited on

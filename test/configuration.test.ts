@@ -23,12 +23,22 @@ describe("resolveSettings", () => {
       ok: true,
       settings: {
         apiToken: "token",
+        tailscaleAuthKey: null,
         idleMs: 15 * 60_000,
         cpu: null,
         memory: null,
         disk: null,
         image: null,
       },
+    });
+  });
+
+  it("accepts a Tailscale auth key and rejects anything else", () => {
+    const withKey = resolveSettings({ ...base, tailscaleAuthKey: " tskey-auth-abc " });
+    expect(withKey.ok && withKey.settings.tailscaleAuthKey).toBe("tskey-auth-abc");
+    expect(resolveSettings({ ...base, tailscaleAuthKey: "abc" })).toEqual({
+      ok: false,
+      message: "tailscaleAuthKey must be a Tailscale auth key (tskey-…).",
     });
   });
 

@@ -4,6 +4,7 @@ import type { SandboxBackend } from "../sandbox-backend.js";
 import {
   createExeDevExecutor,
   ensurePrerequisites,
+  ensureTailnet,
   findVm,
   isPaused,
 } from "./client.js";
@@ -14,7 +15,7 @@ import {
 } from "./resource.js";
 
 export const PROVIDER_ID = "exe-dev";
-const USER_AGENT = "bb-plugin-environment-exe-dev/0.1.0";
+const USER_AGENT = "bb-plugin-environment-exe-dev/0.3.0";
 
 export interface ExeDevConnectionStatus {
   available: boolean;
@@ -152,6 +153,9 @@ export function createExeDevBackend(deps: {
         await vm.resume({ signal: context.signal });
       }
       await ensurePrerequisites(vm, context.report, context.signal);
+      if (settings.tailscaleAuthKey !== null) {
+        await ensureTailnet(vm, settings.tailscaleAuthKey, context.report, context.signal);
+      }
       return { resource, executor: createExeDevExecutor(vm) };
     },
     async reconcileCleanup(context) {
@@ -183,6 +187,10 @@ export function createExeDevBackend(deps: {
         }
       }
       await ensurePrerequisites(vm, context.report, context.signal);
+      const { tailscaleAuthKey } = await requireSettings();
+      if (tailscaleAuthKey !== null) {
+        await ensureTailnet(vm, tailscaleAuthKey, context.report, context.signal);
+      }
       return { resource: context.resource, executor: createExeDevExecutor(vm) };
     },
     async remove(context) {

@@ -47,6 +47,8 @@ These come from `plugins/environment-modal-sandbox/providers/README.md` upstream
   temp file that the command deletes; it must never appear in the command
   line, logs, or the persisted resource.
 - Never store secrets in the machine resource; it is readable by every plugin.
+- Secrets reach a VM only as 0600 files that the same script deletes
+  (bootstrap stdin, Tailscale auth key), never as command-line arguments.
 - Never idle-pause a machine with a running turn (`bb.sdk.threads.listRunning`).
   bb's suspend interrupts running turns, and a long silent tool call emits no
   thread events, so event timestamps alone are not proof of idleness. Upstream
