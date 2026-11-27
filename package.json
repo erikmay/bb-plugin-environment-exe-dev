@@ -42,7 +42,11 @@
     "build": "bb plugin build",
     "upstream:check": "node scripts/check-upstream.mjs main",
     "doctor": "node scripts/doctor.mjs",
-    "test:live": "vitest run --config vitest.live.config.ts"
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "remote:reload": "sh scripts/remote-dev.sh reload",
+    "remote:dev": "sh scripts/remote-dev.sh dev",
+    "remote:logs": "sh scripts/remote-dev.sh logs",
+    "remote:doctor": "sh scripts/remote-dev.sh doctor"
   },
   "dependencies": {
     "@exedev/sdk": "^0.7.0",

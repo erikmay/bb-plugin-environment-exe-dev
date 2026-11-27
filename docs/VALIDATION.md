@@ -44,6 +44,31 @@ bb plugin logs environment-exe-dev -f     # follow the plugin log
 bb plugin config environment-exe-dev      # settings (secrets show as [set])
 ```
 
+### When bb runs on another machine
+
+When your bb server runs on another machine (a VM, a home server), the plugin
+has to live there. You keep editing this checkout, without releases:
+
+1. Give the server an SSH alias, `bb-remote` by default (`BB_REMOTE` picks
+   another), and install [Mutagen](https://mutagen.io) here.
+2. `sh scripts/remote-dev.sh setup` mirrors this checkout to
+   `~/Code/bb-plugins/<repo>` on the server (one way, this computer wins;
+   `node_modules`, `dist` and `.git` stay out). Then install the mirror there
+   once: `bb plugin remove environment-exe-dev && bb plugin install ~/Code/bb-plugins/<repo>`.
+   Removing deletes the plugin's settings, so set them again.
+3. The loop:
+
+```sh
+npm run remote:reload   # sync, build on the server, reload (a few seconds)
+npm run remote:dev      # sync on save; bb plugin dev rebuilds and reloads there
+npm run remote:logs     # follow the plugin log on the server
+npm run remote:doctor   # the health check, run on the server
+```
+
+The server runs whatever this checkout holds, so it is live for you at once.
+Publishing is still a version bump merged to `main`; the server keeps its path
+install.
+
 `npm run typecheck && npm test` must pass before any manual check.
 `EXE_TOKEN_FILE=… npm run test:live` exercises the exe.dev side (create,
 stdin, exit codes, Node.js, retry, pause/resume, delete) against the real API

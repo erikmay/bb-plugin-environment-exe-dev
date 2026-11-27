@@ -24,6 +24,7 @@ upstream changes over inventing new structure.
 | `providers/exe-dev/resource.ts` | Persisted machine resource and VM naming | `providers/modal/resource.ts` |
 | `upstream.json` | Upstream commit this port is synced to, and the files it tracks | — |
 | `scripts/check-upstream.mjs` | Diffs tracked upstream files since the synced commit | — |
+| `scripts/remote-dev.sh` | Fast loop against a bb server on another machine: Mutagen mirror, build and reload there |
 | `scripts/doctor.mjs` | Local health check: bb plugin/providers/machines, plugin log, exe.dev VMs, orphan detection, VM internals | — |
 | `docs/VALIDATION.md` | How to validate and debug against a local bb | — |
 | `skills/exe-dev-vms/SKILL.md` | Skill bb exposes to agents running inside bb | `skills/modal-sandboxes/SKILL.md` |
@@ -74,6 +75,8 @@ npm run upstream:check        # diff tracked upstream files against bb main
 npm run doctor                # health check against the local bb and exe.dev (see docs/VALIDATION.md)
 npm run doctor -- --vm <name> # plus node/linger/daemon/stdin checks on one running VM
 node scripts/check-upstream.mjs <ref> [--json] [--markdown out.md]   # against a tag or commit
+npm run remote:reload        # remote bb: sync, build there, reload (docs/VALIDATION.md)
+npm run remote:logs          # remote bb: follow the plugin log
 ```
 
 ## Definition of done
