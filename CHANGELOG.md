@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — 2026-11-27
+
+- Removed the static `tailscaleAuthKey` fallback: Tailscale now always uses
+  the OAuth client, whose single-use keys are the only safe kind to send to a
+  VM. Set `tailscaleOAuthClientId` and `tailscaleOAuthClientSecret` instead.
+- Leaner repository: removed the upstream-drift watcher, the Claude Code agent
+  workflow, Dependabot, issue and PR templates, the doctor script and the
+  separate validation guide. `AGENTS.md` covers testing, releasing and
+  following bb upstream in one place.
+
 ## 0.4.1 — 2026-11-27
 
 - Fix: minting Tailscale auth keys failed with HTTP 400, because the key

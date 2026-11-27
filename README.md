@@ -61,7 +61,6 @@ bb plugin config environment-exe-dev set apiToken <token>
 |---|---|---|
 | `apiToken` | — | exe.dev API token (secret) |
 | `tailscaleOAuthClientId`, `tailscaleOAuthClientSecret` | empty | Tailscale OAuth client (secret); when set, every VM joins your tailnet with its own single-use key |
-| `tailscaleAuthKey` | empty | Fallback without OAuth: a reusable auth key (secret) |
 | `tailscaleTags` | `tag:bb-sandbox` | Tags every VM joins with (required) |
 | `idleMinutes` | `15` | Pause a VM after this many idle minutes; `0` disables |
 | `cpu` | `0` (exe.dev default) | CPUs for new VMs |
@@ -110,13 +109,6 @@ the tag in your policy to the bb server only:
 ],
 ```
 
-Without an OAuth client, `tailscaleAuthKey` takes a reusable, ephemeral,
-pre-approved key with the same tags. Anything sent to a VM can be read there
-(the exe.dev exec API has no stdin, so the key briefly appears in a process
-list, and an agent with full permissions runs as the same user), and a
-reusable key stays valid for up to 90 days. Prefer the OAuth client, whose
-keys are spent by the join.
-
 ## Security notes
 
 - Agents on a VM run with the permission mode you choose (often Full Access)
@@ -133,30 +125,19 @@ keys are spent by the join.
   `idleMinutes`; raise it or set it to `0` for such work.
 - A turn that hangs as "working" keeps its VM from being paused.
 - A VM whose bb machine is gone (for example after the exe.dev token changed)
-  is not deleted automatically. `npm run doctor` with `EXE_TOKEN` lists such
-  orphans.
+  is not deleted automatically; `ssh exe.dev ls` shows it.
 
 ## Development
 
 ```sh
 npm install
-npm run typecheck
-npm test                   # unit tests, no secrets
+npm run typecheck && npm test
 npm run test:live          # against real exe.dev, needs EXE_TOKEN
 bb plugin install .        # from this checkout
 ```
 
-Maintenance is mostly automated: a weekly job compares the plugin against
-bb's upstream code and opens an issue on drift, an optional Claude Code
-workflow turns such issues (or any issue labelled `agent`) into pull
-requests, and merging a version bump publishes the release. See
-**Automation** in `AGENTS.md`.
-
-`npm run doctor` checks a local install end to end (bb plugin, providers,
-machines, logs, and with `EXE_TOKEN`/`EXE_TOKEN_FILE` the matching exe.dev VMs).
-[docs/VALIDATION.md](docs/VALIDATION.md) covers CLI and UI validation against
-http://127.0.0.1:38886/. `AGENTS.md` describes the architecture, invariants,
-and how to upgrade the plugin when bb changes (`npm run upstream:check`).
+`AGENTS.md` describes the architecture, invariants, releasing, and how to
+follow bb upstream.
 
 ## License
 

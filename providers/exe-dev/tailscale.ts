@@ -7,19 +7,15 @@ const REQUEST_TIMEOUT_MS = 30_000;
 export type Fetch = typeof fetch;
 
 /**
- * The auth key a VM uses to join the tailnet once.
- *
- * With an OAuth client, every join gets a fresh key: single use, ephemeral,
- * pre-approved, tagged, valid for five minutes. A VM can read whatever reaches
- * it (an agent runs there with full permissions), so a key that is spent by
- * the join and expires minutes later is the only kind worth sending. A static
- * key is returned as configured; it is reusable and therefore riskier.
+ * A fresh auth key for one join: single use, ephemeral, pre-approved, tagged,
+ * valid for five minutes. A VM can read whatever reaches it (an agent runs
+ * there with full permissions), so only a key that the join spends and that
+ * expires minutes later is worth sending.
  */
 export async function authKeyForJoin(
   tailnet: TailnetSettings,
   options: { fetch?: Fetch; signal?: AbortSignal } = {},
 ): Promise<string> {
-  if (tailnet.kind === "key") return tailnet.authKey;
   const fetchImpl = options.fetch ?? fetch;
   const signal = AbortSignal.any([
     options.signal ?? new AbortController().signal,

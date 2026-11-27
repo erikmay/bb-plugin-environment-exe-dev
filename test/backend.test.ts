@@ -7,6 +7,14 @@ import { vmNameForKey, type ExeDevMachineResource } from "../providers/exe-dev/r
 import { NODE_SHA256, NODE_VERSION } from "../providers/exe-dev/client.js";
 
 const EMAIL = "owner@example.com";
+const TAILNET: TailnetSettings = { clientId: "id", clientSecret: "tskey-client-x", tags: ["tag:bb-sandbox"] };
+const MINTED_KEY = "tskey-auth-minted";
+
+/** Tailscale's API: an OAuth token, then a fresh auth key. */
+const tailscaleApi = (async (url: string) =>
+  new Response(JSON.stringify(url.endsWith("/oauth/token") ? { access_token: "at" } : { key: MINTED_KEY }), {
+    status: 200,
+  })) as unknown as typeof fetch;
 
 class FakeVm {
   status: "running" | "paused" = "running";
@@ -96,7 +104,7 @@ function setup(options: { email?: string; tailnet?: TailnetSettings | null; fetc
     currentSettings: async () => settings,
     clientFactory: () => client,
     serverUrl: async () => "https://bb.example.ts.net",
-    fetch: options.fetch,
+    fetch: options.fetch ?? tailscaleApi,
   });
   const report = { step: vi.fn(), log: vi.fn() };
   const signal = new AbortController().signal;
@@ -111,9 +119,9 @@ describe("exe.dev backend", () => {
     expect(vm?.scripts.some((script) => script.includes("tailscale"))).toBe(false);
   });
 
-  it("joins with the key in a file the script deletes, never on the command line", async () => {
-    const key = "tskey-auth-secretvalue";
-    const { backend, report, signal, vms } = setup({ tailnet: { kind: "key", authKey: key, tags: ["tag:bb-sandbox"] } });
+  it("joins with a minted key in a file the script deletes, never on the command line", async () => {
+    const key = MINTED_KEY;
+    const { backend, report, signal, vms } = setup({ tailnet: TAILNET });
     await backend.create({ key: "thr_ts", attempt: 1, report, signal, checkpoint: async () => {} });
     const vm = vms.get(vmNameForKey("thr_ts"));
     const keyFile = vm?.files.find((file) => file.path.startsWith(".bb-exe-dev/tailscale-"));
@@ -132,7 +140,7 @@ describe("exe.dev backend", () => {
   it("sends no key when the VM is already on the tailnet and reaches the server", async () => {
     const fetchSpy = vi.fn();
     const { backend, report, signal, vms } = setup({
-      tailnet: { kind: "oauth", clientId: "id", clientSecret: "tskey-client-x", tags: ["tag:bb-sandbox"] },
+      tailnet: TAILNET,
       fetch: fetchSpy as unknown as typeof fetch,
     });
     const name = vmNameForKey("thr_on");
@@ -154,7 +162,7 @@ describe("exe.dev backend", () => {
       return new Response(JSON.stringify(payload), { status: 200 });
     });
     const { backend, report, signal, vms } = setup({
-      tailnet: { kind: "oauth", clientId: "id", clientSecret: "tskey-client-x", tags: ["tag:bb-sandbox"] },
+      tailnet: TAILNET,
       fetch: fakeFetch as unknown as typeof fetch,
     });
     await backend.create({ key: "thr_oauth", attempt: 1, report, signal, checkpoint: async () => {} });
@@ -172,7 +180,7 @@ describe("exe.dev backend", () => {
   });
 
   it("pauses the VM again when the tailnet join fails during resume", async () => {
-    const { backend, report, signal, vms } = setup({ tailnet: { kind: "key", authKey: "tskey-auth-x", tags: ["tag:bb-sandbox"] } });
+    const { backend, report, signal, vms } = setup({ tailnet: TAILNET });
     const name = vmNameForKey("thr_fail");
     const vm = new FakeVm(name);
     vm.status = "paused";

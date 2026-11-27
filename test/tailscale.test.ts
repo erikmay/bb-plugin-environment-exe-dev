@@ -1,16 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { authKeyForJoin } from "../providers/exe-dev/tailscale.js";
 
-const oauth = { kind: "oauth", clientId: "kid", clientSecret: "tskey-client-supersecret", tags: ["tag:bb-sandbox"] } as const;
+const oauth = { clientId: "kid", clientSecret: "tskey-client-supersecret", tags: ["tag:bb-sandbox"] } as const;
 
 describe("authKeyForJoin", () => {
-  it("returns a static key unchanged without calling Tailscale", async () => {
-    const fetchSpy = vi.fn();
-    const key = await authKeyForJoin({ kind: "key", authKey: "tskey-auth-a", tags: ["tag:x"] }, { fetch: fetchSpy as unknown as typeof fetch });
-    expect(key).toBe("tskey-auth-a");
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
   it("explains a refused OAuth client without echoing the secret", async () => {
     const fakeFetch = vi.fn(async () => new Response("denied", { status: 401 }));
     const error = await authKeyForJoin(oauth, { fetch: fakeFetch as unknown as typeof fetch }).catch((e: Error) => e);

@@ -20,14 +20,6 @@ export const SETTING_DESCRIPTORS = {
     description: "The secret of the OAuth client above (tskey-client-…).",
     default: "",
   },
-  tailscaleAuthKey: {
-    type: "string",
-    secret: true,
-    label: "Tailscale auth key (fallback)",
-    description:
-      "Used only without an OAuth client: a reusable, ephemeral, pre-approved auth key (tskey-auth-…) with the tags below. Every VM can read it, so prefer the OAuth client.",
-    default: "",
-  },
   tailscaleTags: {
     type: "string",
     label: "Tailscale tags",
@@ -69,9 +61,11 @@ export const SETTING_DESCRIPTORS = {
   },
 } as const;
 
-export type TailnetSettings =
-  | { kind: "oauth"; clientId: string; clientSecret: string; tags: readonly string[] }
-  | { kind: "key"; authKey: string; tags: readonly string[] };
+export interface TailnetSettings {
+  clientId: string;
+  clientSecret: string;
+  tags: readonly string[];
+}
 
 export interface ResolvedSettings {
   apiToken: string;
@@ -89,7 +83,6 @@ export type SettingsResolution =
 
 export interface RawSettings {
   apiToken: string | undefined;
-  tailscaleAuthKey?: string | undefined;
   tailscaleOAuthClientId?: string | undefined;
   tailscaleOAuthClientSecret?: string | undefined;
   tailscaleTags?: string | undefined;
@@ -161,9 +154,12 @@ function resolveTailnet(
 ): { ok: true; value: TailnetSettings | null } | { ok: false; message: string } {
   const clientId = (raw.tailscaleOAuthClientId ?? "").trim();
   const clientSecret = (raw.tailscaleOAuthClientSecret ?? "").trim();
-  const authKey = (raw.tailscaleAuthKey ?? "").trim();
-  if (clientId.length === 0 && clientSecret.length === 0 && authKey.length === 0) {
-    return { ok: true, value: null };
+  if (clientId.length === 0 && clientSecret.length === 0) return { ok: true, value: null };
+  if (clientId.length === 0 || clientSecret.length === 0) {
+    return { ok: false, message: "Set both tailscaleOAuthClientId and tailscaleOAuthClientSecret." };
+  }
+  if (!clientSecret.startsWith("tskey-client-")) {
+    return { ok: false, message: "tailscaleOAuthClientSecret must be an OAuth client secret (tskey-client-…)." };
   }
   const tags = (raw.tailscaleTags ?? "tag:bb-sandbox")
     .split(",")
@@ -175,17 +171,5 @@ function resolveTailnet(
       message: "tailscaleTags must list at least one tag like tag:bb-sandbox; untagged VMs would act as you on the tailnet.",
     };
   }
-  if (clientId.length > 0 || clientSecret.length > 0) {
-    if (clientId.length === 0 || clientSecret.length === 0) {
-      return { ok: false, message: "Set both tailscaleOAuthClientId and tailscaleOAuthClientSecret." };
-    }
-    if (!clientSecret.startsWith("tskey-client-")) {
-      return { ok: false, message: "tailscaleOAuthClientSecret must be an OAuth client secret (tskey-client-…)." };
-    }
-    return { ok: true, value: { kind: "oauth", clientId, clientSecret, tags } };
-  }
-  if (!authKey.startsWith("tskey-auth-")) {
-    return { ok: false, message: "tailscaleAuthKey must be an auth key (tskey-auth-…), not an API token or OAuth secret." };
-  }
-  return { ok: true, value: { kind: "key", authKey, tags } };
+  return { ok: true, value: { clientId, clientSecret, tags } };
 }

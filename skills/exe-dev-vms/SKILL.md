@@ -27,6 +27,6 @@ Troubleshooting:
 - "Not logged in" from the agent: the VM has no agent credentials. Use the
   Account Pooler plugin or a `CLAUDE_CODE_OAUTH_TOKEN` machine environment
   variable.
-- Provisioning cannot reach the server: bb connect must be ready
-  (Settings → Machines → Machine access).
+- Provisioning cannot reach the server: the VM needs a route to bb, either
+  bb connect or the tailnet (the plugin's Tailscale OAuth client settings).
 - `bb plugin logs environment-exe-dev` shows connection and idle-pause events.

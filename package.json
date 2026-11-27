@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-environment-exe-dev",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "bb plugin: run every bb thread in its own exe.dev VM",
   "license": "MIT",
   "author": "Erik May (https://github.com/erikmay)",
@@ -40,8 +40,6 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "build": "bb plugin build",
-    "upstream:check": "node scripts/check-upstream.mjs main",
-    "doctor": "node scripts/doctor.mjs",
     "test:live": "vitest run --config vitest.live.config.ts",
     "remote:reload": "sh scripts/remote-dev.sh reload",
     "remote:logs": "sh scripts/remote-dev.sh logs"
