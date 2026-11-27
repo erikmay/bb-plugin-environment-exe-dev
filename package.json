@@ -55,13 +55,13 @@
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.6.157",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.3",
     "@types/react-dom": "^19.3.0",
     "better-sqlite3": "^12.11.1",
     "cron-parser": "^5.10.7",
     "hono": "^4.13.22",
-    "typescript": "^5.7.0",
-    "vitest": "^4.1.12"
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
   }
 }
